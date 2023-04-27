@@ -1,0 +1,25 @@
+node_modules/
+client/
+.DS_Store
+.env
+contracts_processed/
+docs/
+docgen/
+.openzeppelin/
+.vscode/
+gas_reports.txt
+stash/
+package-lock.json
+
+#Hardhat files
+cache/
+artifacts/
+typechain/
+
+.env
+coverage.json
+coverage/
+
+*-ignore
+*.hbs
+*-backup*
