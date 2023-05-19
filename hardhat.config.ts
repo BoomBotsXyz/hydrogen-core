@@ -1,56 +1,61 @@
-import { HardhatUserConfig } from "hardhat/types";
-import { task } from "hardhat/config";
-import "hardhat-contract-sizer";
-import "@nomiclabs/hardhat-waffle";
-import "hardhat-typechain";
+import { HardhatUserConfig } from "hardhat/config";
+import "@nomicfoundation/hardhat-toolbox";
 import "hardhat-abi-exporter";
-import "solidity-coverage";
-import "hardhat-gas-reporter";
-import "@nomiclabs/hardhat-ethers";
-import "@nomiclabs/hardhat-etherscan";
+import "hardhat-contract-sizer";
 import { config as dotenv_config } from "dotenv";
 dotenv_config();
 const USE_PROCESSED_FILES = process.env.USE_PROCESSED_FILES === "true";
 
 const ethereum_fork = { url: process.env.ETHEREUM_URL || '' };
 const goerli_fork = { url: process.env.GOERLI_URL || '' };
+const sepolia_fork = { url: process.env.SEPOLIA_URL || '' };
 const polygon_fork = { url: process.env.POLYGON_URL || '' };
 const mumbai_fork = { url: process.env.MUMBAI_URL || '' };
 const no_fork = undefined;
 const forking = (
     process.env.FORK_NETWORK === "ethereum"       ? ethereum_fork
   : process.env.FORK_NETWORK === "goerli"         ? goerli_fork
+  : process.env.FORK_NETWORK === "sepolia"        ? sepolia_fork
   : process.env.FORK_NETWORK === "polygon"        ? polygon_fork
   : process.env.FORK_NETWORK === "mumbai"         ? mumbai_fork
   : no_fork
 );
 
-const hardhat_network = process.env.FORK_NETWORK ? {forking} : {};
+const accounts = JSON.parse(process.env.PRIVATE_KEYS || '[]');
 
 const config: HardhatUserConfig = {
   defaultNetwork: "hardhat",
   networks: {
-    hardhat: hardhat_network,
+    hardhat: {
+      forking: process.env.FORK_NETWORK ? forking : undefined,
+      hardfork: "merge"
+    },
     localhost: { url: "http://127.0.0.1:8545" },
     ethereum: {
       url: process.env.ETHEREUM_URL || '',
       chainId: 1,
-      accounts: JSON.parse(process.env.PRIVATE_KEYS || '[]')
+      accounts: accounts
     },
     goerli: {
       url: process.env.GOERLI_URL || '',
       chainId: 5,
-      accounts: JSON.parse(process.env.PRIVATE_KEYS || '[]')
+      accounts: accounts
+    },
+    sepolia: {
+      url: process.env.SEPOLIA_URL || '',
+      chainId: 111555111,
+      accounts: accounts
     },
     polygon: {
       url: process.env.POLYGON_URL || '',
       chainId: 137,
-      accounts: JSON.parse(process.env.PRIVATE_KEYS || '[]')
+      accounts: accounts
     },
     mumbai: {
       url: process.env.MUMBAI_URL || '',
       chainId: 80001,
-      accounts: JSON.parse(process.env.PRIVATE_KEYS || '[]')
+      accounts: accounts,
+      hardfork: "merge"
     },
   },
   solidity: {
@@ -92,19 +97,11 @@ const config: HardhatUserConfig = {
     apiKey: {
       mainnet: process.env.ETHERSCAN_API_KEY || "",
       goerli:  process.env.ETHERSCAN_API_KEY || "",
+      sepolia: process.env.ETHERSCAN_API_KEY || "",
       polygon: process.env.POLYGONSCAN_API_KEY || "",
       polygonMumbai: process.env.POLYGONSCAN_API_KEY || "",
     }
   }
 };
-
-// If you are defining tasks, they need to access the Hardhat Runtime Environment (hre) explicitly, as a parameter.
-task("accounts", "Prints the list of accounts", async (args, hre) => {
-  const accounts = await hre.ethers.getSigners();
-
-  for (const account of accounts) {
-    console.log(account.address);
-  }
-});
 
 export default config;
