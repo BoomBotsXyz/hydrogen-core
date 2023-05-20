@@ -65,7 +65,9 @@ describe("HydrogenNucleus Integration", function () {
   else if(isChain(80001, "mumbai")) tokens = JSON.parse(fs.readFileSync("./data/tokens/80001.json").toString().trim());
   else return;
 
+  let dai: any;
   let usdc: any;
+  let usdt: any;
   let wbtc: any;
 
   let chainID: number;
@@ -119,10 +121,12 @@ describe("HydrogenNucleus Integration", function () {
         console.log(`balanceOf slot: ${token.balanceOfSlot}`);
       }
       // tokens by symbol
-      if(token.symbol === "WBTC") wbtc = token;
+      if(token.symbol === "DAI") dai = token;
       if(token.symbol === "USDC") usdc = token;
+      if(token.symbol === "USDT") usdt = token;
+      if(token.symbol === "WBTC") wbtc = token;
     }
-    let requiredTokens = { wbtc, usdc } as any;
+    let requiredTokens = { dai, usdc, usdt, wbtc } as any;
     let symbols = Object.keys(requiredTokens);
     let missingTokens = [] as string[];
     symbols.forEach(sym => { if(!requiredTokens[sym]) missingTokens.push(sym)});
@@ -180,9 +184,9 @@ describe("HydrogenNucleus Integration", function () {
       };
       let poolID = await nucleus.connect(alice).callStatic.createLimitOrderPool(params);
       let tx = await nucleus.connect(alice).createLimitOrderPool(params);
-      let receipt = await tx.wait();
-      console.log(receipt.events[0].event)
-      console.log(receipt.events[0].args.poolID)
+      //let receipt = await tx.wait();
+      //console.log(receipt.events[0].event)
+      //console.log(receipt.events[0].args.poolID)
       // checks
       expect(poolID).eq(1001);
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
@@ -246,6 +250,197 @@ describe("HydrogenNucleus Integration", function () {
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, bobExternalLocation, poolLocation, amountB);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, poolLocation, aliceExternalLocation, amountB);
     });
+    it("scenario 3: create wbtc-usdc grid order", async function () {
+      let exchangeRateSellUsdcBuyWbtc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(25_000), WeiPerWbtc);
+      let exchangeRateSellWbtcBuyUsdc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerWbtc, WeiPerUsdc.mul(30_000));
+      let amountUsdcDeposit = WeiPerUsdc.mul(10_000);
+      let amountWbtcDeposit = WeiPerWbtc;
+      await mintTokens(usdc, alice.address, amountUsdcDeposit);
+      await mintTokens(wbtc, alice.address, amountWbtcDeposit);
+      await usdc.contract.connect(alice).approve(nucleus.address, MaxUint256);
+      await wbtc.contract.connect(alice).approve(nucleus.address, MaxUint256);
+      // alice creates a grid order
+      let params = {
+        tokenSources: [{
+          token: usdc.address,
+          amount: amountUsdcDeposit,
+          loc: aliceExternalLocation
+        },{
+          token: wbtc.address,
+          amount: amountWbtcDeposit,
+          loc: aliceExternalLocation
+        }],
+        tradeRequests: [{
+          tokenA: usdc.address,
+          tokenB: wbtc.address,
+          exchangeRate: exchangeRateSellUsdcBuyWbtc,
+          locationB: LOCATION_THIS_POOL
+        },{
+          tokenA: wbtc.address,
+          tokenB: usdc.address,
+          exchangeRate: exchangeRateSellWbtcBuyUsdc,
+          locationB: LOCATION_THIS_POOL
+        }],
+        hptReceiver: alice.address
+      };
+      let poolID = await nucleus.connect(alice).callStatic.createGridOrderPool(params);
+      let tx = await nucleus.connect(alice).createGridOrderPool(params);
+      //let receipt = await tx.wait();
+      //console.log(receipt.events[0].event)
+      //console.log(receipt.events[0].args.poolID)
+      // checks
+      expect(poolID).eq(2002);
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      expect(await nucleus.getTokenBalance(usdc.address, poolLocation)).eq(amountUsdcDeposit);
+      expect(await nucleus.getTokenBalance(wbtc.address, poolLocation)).eq(amountWbtcDeposit);
+      let pool = await nucleus.getGridOrderPool(poolID);
+      expect(pool.tokens.length).eq(2);
+      expect(pool.tokens[0]).eq(usdc.address);
+      expect(pool.tokens[1]).eq(wbtc.address);
+      expect(pool.balances.length).eq(2);
+      expect(pool.balances[0]).eq(amountUsdcDeposit);
+      expect(pool.balances[1]).eq(amountWbtcDeposit);
+      expect(pool.tradeRequests.length).eq(2);
+      expect(pool.tradeRequests[0].tokenA).eq(usdc.address);
+      expect(pool.tradeRequests[0].tokenB).eq(wbtc.address);
+      expect(pool.tradeRequests[0].exchangeRate).eq(exchangeRateSellUsdcBuyWbtc);
+      expect(pool.tradeRequests[0].locationB).eq(poolLocation);
+      expect(pool.tradeRequests[1].tokenA).eq(wbtc.address);
+      expect(pool.tradeRequests[1].tokenB).eq(usdc.address);
+      expect(pool.tradeRequests[1].exchangeRate).eq(exchangeRateSellWbtcBuyUsdc);
+      expect(pool.tradeRequests[1].locationB).eq(poolLocation);
+      expect(await nucleus.ownerOf(poolID)).eq(alice.address);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, alice.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(usdc.address, aliceExternalLocation, poolLocation, amountUsdcDeposit);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, aliceExternalLocation, poolLocation, amountWbtcDeposit);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, usdc.address, wbtc.address, exchangeRateSellUsdcBuyWbtc, poolLocation);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, wbtc.address, usdc.address, exchangeRateSellWbtcBuyUsdc, poolLocation);
+      //await expect(tx).to.emit(usdc, "Transfer").withArgs(alice.address, nucleus.address, amountA); // cannot fetch events from contract off fork network
+    });
+    it("scenario 4: create dai-usdc-usdt grid order", async function () {
+      // buy each for 0.99 of the other
+      let exchangeRateSellDaiBuyUsdc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther.mul(99), WeiPerUsdc.mul(100));
+      let exchangeRateSellUsdcBuyDai = HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(99), WeiPerEther.mul(100));
+      let exchangeRateSellDaiBuyUsdt = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther.mul(99), WeiPerUsdc.mul(100));
+      let exchangeRateSellUsdtBuyDai = HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(99), WeiPerEther.mul(100));
+      let exchangeRateSellUsdcBuyUsdt = HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(99), WeiPerUsdc.mul(100));
+      let exchangeRateSellUsdtBuyUsdc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(99), WeiPerUsdc.mul(100));
+      let amountDaiDeposit = WeiPerEther.mul(10_000);
+      let amountUsdcDeposit = WeiPerUsdc.mul(10_000);
+      let amountUsdtDeposit = WeiPerUsdc.mul(10_000);
+      await mintTokens(dai, alice.address, amountDaiDeposit);
+      await mintTokens(usdc, alice.address, amountUsdcDeposit);
+      await mintTokens(usdt, alice.address, amountUsdtDeposit);
+      await dai.contract.connect(alice).approve(nucleus.address, MaxUint256);
+      await usdc.contract.connect(alice).approve(nucleus.address, MaxUint256);
+      await usdt.contract.connect(alice).approve(nucleus.address, MaxUint256);
+      // alice creates a limit order
+      let params = {
+        tokenSources: [{
+          token: dai.address,
+          amount: amountDaiDeposit,
+          loc: aliceExternalLocation
+        },{
+          token: usdc.address,
+          amount: amountUsdcDeposit,
+          loc: aliceExternalLocation
+        },{
+          token: usdt.address,
+          amount: amountUsdtDeposit,
+          loc: aliceExternalLocation
+        }],
+        tradeRequests: [{
+          tokenA: dai.address,
+          tokenB: usdc.address,
+          exchangeRate: exchangeRateSellDaiBuyUsdc,
+          locationB: LOCATION_THIS_POOL
+        },{
+          tokenA: usdc.address,
+          tokenB: dai.address,
+          exchangeRate: exchangeRateSellUsdcBuyDai,
+          locationB: LOCATION_THIS_POOL
+        },{
+          tokenA: dai.address,
+          tokenB: usdt.address,
+          exchangeRate: exchangeRateSellDaiBuyUsdt,
+          locationB: LOCATION_THIS_POOL
+        },{
+          tokenA: usdt.address,
+          tokenB: dai.address,
+          exchangeRate: exchangeRateSellUsdtBuyDai,
+          locationB: LOCATION_THIS_POOL
+        },{
+          tokenA: usdc.address,
+          tokenB: usdt.address,
+          exchangeRate: exchangeRateSellUsdcBuyUsdt,
+          locationB: LOCATION_THIS_POOL
+        },{
+          tokenA: usdt.address,
+          tokenB: usdc.address,
+          exchangeRate: exchangeRateSellUsdtBuyUsdc,
+          locationB: LOCATION_THIS_POOL
+        }],
+        hptReceiver: alice.address
+      };
+      let poolID = await nucleus.connect(alice).callStatic.createGridOrderPool(params);
+      let tx = await nucleus.connect(alice).createGridOrderPool(params);
+      //let receipt = await tx.wait();
+      //console.log(receipt.events[0].event)
+      //console.log(receipt.events[0].args.poolID)
+      // checks
+      expect(poolID).eq(3002);
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      expect(await nucleus.getTokenBalance(dai.address, poolLocation)).eq(amountDaiDeposit);
+      expect(await nucleus.getTokenBalance(usdc.address, poolLocation)).eq(amountUsdcDeposit);
+      expect(await nucleus.getTokenBalance(usdt.address, poolLocation)).eq(amountUsdtDeposit);
+      let pool = await nucleus.getGridOrderPool(poolID);
+      expect(pool.tokens.length).eq(3);
+      expect(pool.tokens[0]).eq(dai.address);
+      expect(pool.tokens[1]).eq(usdc.address);
+      expect(pool.tokens[2]).eq(usdt.address);
+      expect(pool.balances.length).eq(3);
+      expect(pool.balances[0]).eq(amountDaiDeposit);
+      expect(pool.balances[1]).eq(amountUsdcDeposit);
+      expect(pool.balances[2]).eq(amountUsdtDeposit);
+      expect(pool.tradeRequests.length).eq(6);
+      expect(pool.tradeRequests[0].tokenA).eq(dai.address);
+      expect(pool.tradeRequests[0].tokenB).eq(usdc.address);
+      expect(pool.tradeRequests[0].exchangeRate).eq(exchangeRateSellDaiBuyUsdc);
+      expect(pool.tradeRequests[0].locationB).eq(poolLocation);
+      expect(pool.tradeRequests[1].tokenA).eq(dai.address);
+      expect(pool.tradeRequests[1].tokenB).eq(usdt.address);
+      expect(pool.tradeRequests[1].exchangeRate).eq(exchangeRateSellDaiBuyUsdt);
+      expect(pool.tradeRequests[1].locationB).eq(poolLocation);
+      expect(pool.tradeRequests[2].tokenA).eq(usdc.address);
+      expect(pool.tradeRequests[2].tokenB).eq(dai.address);
+      expect(pool.tradeRequests[2].exchangeRate).eq(exchangeRateSellUsdcBuyDai);
+      expect(pool.tradeRequests[2].locationB).eq(poolLocation);
+      expect(pool.tradeRequests[3].tokenA).eq(usdc.address);
+      expect(pool.tradeRequests[3].tokenB).eq(usdt.address);
+      expect(pool.tradeRequests[3].exchangeRate).eq(exchangeRateSellUsdcBuyUsdt);
+      expect(pool.tradeRequests[3].locationB).eq(poolLocation);
+      expect(pool.tradeRequests[4].tokenA).eq(usdt.address);
+      expect(pool.tradeRequests[4].tokenB).eq(dai.address);
+      expect(pool.tradeRequests[4].exchangeRate).eq(exchangeRateSellUsdtBuyDai);
+      expect(pool.tradeRequests[4].locationB).eq(poolLocation);
+      expect(pool.tradeRequests[5].tokenA).eq(usdt.address);
+      expect(pool.tradeRequests[5].tokenB).eq(usdc.address);
+      expect(pool.tradeRequests[5].exchangeRate).eq(exchangeRateSellUsdtBuyUsdc);
+      expect(pool.tradeRequests[5].locationB).eq(poolLocation);
+      expect(await nucleus.ownerOf(poolID)).eq(alice.address);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, alice.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(dai.address, aliceExternalLocation, poolLocation, amountDaiDeposit);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(usdc.address, aliceExternalLocation, poolLocation, amountUsdcDeposit);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(usdt.address, aliceExternalLocation, poolLocation, amountUsdtDeposit);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, dai.address, usdc.address, exchangeRateSellDaiBuyUsdc, poolLocation);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, dai.address, usdt.address, exchangeRateSellDaiBuyUsdt, poolLocation);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, usdc.address, dai.address, exchangeRateSellUsdcBuyDai, poolLocation);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, usdc.address, usdt.address, exchangeRateSellUsdcBuyUsdt, poolLocation);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, usdt.address, dai.address, exchangeRateSellUsdtBuyDai, poolLocation);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, usdt.address, usdc.address, exchangeRateSellUsdtBuyUsdc, poolLocation);
+    });
   });
 
   describe("events", function () {
@@ -253,7 +448,7 @@ describe("HydrogenNucleus Integration", function () {
       let accounts:any = { nucleus, deployer, owner, alice, bob };
       let accountNames = Object.keys(accounts);
       console.log("fetching account balances")
-      const tokens:any = { wbtc: wbtc.contract, usdc: usdc.contract };
+      const tokens:any = { dai: dai.contract, usdc: usdc.contract, usdt: usdt.contract, wbtc: wbtc.contract };
       const tokenNames = Object.keys(tokens);
       for(let i = 0; i < accountNames.length; i++) {
         console.log(`\nuser: ${accountNames[i]}`);
@@ -275,7 +470,7 @@ describe("HydrogenNucleus Integration", function () {
       for(let i = 0; i < totalSupply; i++) {
         poolIDs.push(await nucleus.tokenByIndex(i))
       }
-      const tokens:any = { wbtc: wbtc.contract, usdc: usdc.contract };
+      const tokens:any = { dai: dai.contract, usdc: usdc.contract, usdt: usdt.contract, wbtc: wbtc.contract };
       const tokenNames = Object.keys(tokens);
       console.log("fetching pool balances")
       for(let i = 0; i < poolIDs.length; i++) {
