@@ -85,8 +85,14 @@ export default class HydrogenNucleusEventLogger {
         transactionCount++;
       }
       // parse event
-      if(event.event === "OwnershipTransferred") {
+      if(event.event === "OwnershipTransferStarted") {
+        s = `${s}\n  Contract ownership transfer started to ${event.args.newOwner}`;
+      } else if(event.event === "OwnershipTransferred") {
         s = `${s}\n  Contract ownership transferred to ${event.args.newOwner}`;
+      } else if(event.event === "BaseURISet") {
+        s = `${s}\n  Base URI set to ${event.args[0]}`;
+      } else if(event.event === "ContractURISet") {
+        s = `${s}\n  Contract URI set to ${event.args[0]}`;
       } else if(event.event === "TokensTransferred") {
         s = `${s}\n  Transferred ${await _stringifyTokenAndAmount(event.args.token, event.args.amount)} from ${HydrogenNucleusHelper.locationToString(event.args.from)} to ${HydrogenNucleusHelper.locationToString(event.args.to)}`;
       } else if(event.event === "PoolCreated") {
@@ -126,12 +132,12 @@ export default class HydrogenNucleusEventLogger {
       } else if(event.event === "MarketOrderExecuted") {
         let tokenA = await _getToken(event.args.tokenA);
         let tokenB = await _getToken(event.args.tokenB);
-        let amountAMMStr = formatUnits(event.args.amountAFromPool, tokenA.decimals);
-        let amountAMTStr = formatUnits(event.args.amountAToMarketTaker, tokenA.decimals);
-        let amountAFr = event.args.amountAFromPool.sub(event.args.amountAToMarketTaker);
-        let amountAFRStr = formatUnits(amountAFr, tokenA.decimals);
-        let amountBStr = formatUnits(event.args.amountBToPool, tokenB.decimals);
-        s = `${s}\n  Market order executed. Market maker swapped ${amountAMMStr} ${tokenA.symbol} for ${amountBStr} ${tokenB.symbol}. Market taker swapped ${amountBStr} ${tokenB.symbol} for ${amountAMTStr} ${tokenA.symbol}.${amountAFr.eq(0) ? "" : ` Fees generated: ${amountAFRStr} ${tokenA.symbol}`}`;
+        let amountAStr = formatUnits(event.args.amountAToMarketTaker, tokenA.decimals);
+        let amountBFr = event.args.amountBFromMarketTaker.sub(event.args.amountBToPool);
+        let amountBFRStr = formatUnits(amountBFr, tokenA.decimals);
+        let amountBMTStr = formatUnits(event.args.amountBFromMarketTaker, tokenB.decimals);
+        let amountBMMStr = formatUnits(event.args.amountBToPool, tokenB.decimals);
+        s = `${s}\n  Market order executed. Market maker swapped ${amountAStr} ${tokenA.symbol} for ${amountBMMStr} ${tokenB.symbol}. Market taker swapped ${amountBMTStr} ${tokenB.symbol} for ${amountAStr} ${tokenA.symbol}.${amountBFr.eq(0) ? "" : ` Fees generated: ${amountBFRStr} ${tokenB.symbol}`}`;
       } else if(event.event === "SwapFeeSetForPair") {
         let tokenA = await _getToken(event.args.tokenA);
         let tokenB = await _getToken(event.args.tokenB);

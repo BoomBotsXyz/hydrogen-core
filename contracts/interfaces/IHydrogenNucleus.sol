@@ -17,18 +17,20 @@ interface IHydrogenNucleus is IERC721Enumerable {
 
     /// @notice Emitted when tokens are transferred between locations.
     event TokensTransferred(address indexed token, bytes32 indexed from, bytes32 indexed to, uint256 amount);
-    /// @notice Emitted when the base URI is set.
-    event BaseURISet(string baseURI);
     /// @notice Emitted when a pool is created.
     event PoolCreated(uint256 indexed poolID);
     /// @notice Emitted when a trade request is updated by the pool owner.
     event TradeRequestUpdated(uint256 indexed poolID, address indexed tokenA, address indexed tokenB, bytes32 exchangeRate, bytes32 locationB);
     /// @notice Emitted when a market order is executed.
-    event MarketOrderExecuted(uint256 indexed poolID, address indexed tokenA, address indexed tokenB, uint256 amountAFromPool, uint256 amountAToMarketTaker, uint256 amountBToPool);
+    event MarketOrderExecuted(uint256 indexed poolID, address indexed tokenA, address indexed tokenB, uint256 amountAToMarketTaker, uint256 amountBFromMarketTaker, uint256 amountBToPool);
     /// @notice Emitted when the swap fee for a pair is set.
     event SwapFeeSetForPair(address indexed tokenA, address indexed tokenB, uint256 feePPM, bytes32 receiverLocation);
     /// @notice Emitted when the flash loan fee for a token is set.
     event FlashLoanFeeSetForToken(address indexed token, uint256 feePPM, bytes32 receiverLocation);
+    /// @notice Emitted when the base URI is set.
+    event BaseURISet(string baseURI);
+    /// @notice Emitted when the contract URI is set.
+    event ContractURISet(string contractURI);
 
     /***************************************
     STATE VARIABLES
@@ -95,31 +97,19 @@ interface IHydrogenNucleus is IERC721Enumerable {
         bytes32 locationB
     );
 
-    /**
-     * @notice Returns the base URI for computing tokenURI.
-     * @return base The base URI.
-     */
-    function baseURI() external view returns (string memory base);
-
-    /**
-     * @notice Sets the base URI for computing tokenURI.
-     * @param base The new base URI.
-     */
-    function setBaseURI(string calldata base) external;
-
     /***************************************
     TOKEN FUNCTIONS
     ***************************************/
 
     /**
-     * @notice Returns the token balance of `loc`.
+     * @notice Returns the token balance of `location`.
      * @param token The address of the token to query.
-     * @param loc The location to query balance of.
+     * @param location The location to query balance of.
      * @return balance The balance of the token at the location.
      */
     function getTokenBalance(
         address token,
-        bytes32 loc
+        bytes32 location
     ) external view returns (uint256 balance);
 
     struct TokenTransferParams {
@@ -224,7 +214,7 @@ interface IHydrogenNucleus is IERC721Enumerable {
     struct TokenSource {
         address token;
         uint256 amount;
-        bytes32 loc;
+        bytes32 location;
     }
 
     struct CreateGridOrderParams {
@@ -406,4 +396,32 @@ interface IHydrogenNucleus is IERC721Enumerable {
      * @param params token, feePPM, receiverLocation.
      */
     function setFlashLoanFeesForTokens(SetFlashLoanFeeForTokenParam[] calldata params) external;
+
+    /***************************************
+    URI FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Returns the base URI for computing tokenURI.
+     * @return uri The base URI.
+     */
+    function baseURI() external view returns (string memory uri);
+
+    /**
+     * @notice Sets the base URI for computing tokenURI.
+     * @param uri The new base URI.
+     */
+    function setBaseURI(string calldata uri) external;
+
+    /**
+     * @notice Returns the contract URI.
+     * @return uri The contract URI.
+     */
+    function contractURI() external view returns (string memory uri);
+
+    /**
+     * @notice Sets the contract URI.
+     * @param uri The new contract URI.
+     */
+    function setContractURI(string calldata uri) external;
 }

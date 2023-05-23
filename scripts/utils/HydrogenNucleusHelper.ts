@@ -7,19 +7,11 @@ import { rightPad } from "./strings";
 
 const { getAddress } = ethers.utils;
 const MaxUint128 = BN.from(2).pow(128).sub(1);
+const MAX_PPM = BN.from(1_000_000); // parts per million
 
 const ABI_ERC20_MIN = [{"inputs":[],"name":"decimals","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"}];
 
 export default class HydrogenNucleusHelper {
-  nucleus: HydrogenNucleus;
-  chainID: number;
-  eventCache: any;
-
-  constructor(nucleus:HydrogenNucleus, chainID: number) {
-    this.nucleus = nucleus;
-    this.chainID = chainID;
-    this.eventCache = {};
-  }
 
   static externalAddressToLocation(address: string) {
     let addr = address.substring(2).toLowerCase();
@@ -84,6 +76,7 @@ export default class HydrogenNucleusHelper {
     return [x1, x2];
   }
 
+  // as market maker
   static calculateAmountA(amountB: BigNumberish, exchangeRate: BytesLike) {
     // decode exchange rate
     let er = BN.from(exchangeRate);
@@ -96,6 +89,7 @@ export default class HydrogenNucleusHelper {
     return amountA;
   }
 
+  // as market maker
   static calculateAmountB(amountA: BigNumberish, exchangeRate: BytesLike) {
     // decode exchange rate
     let er = BN.from(exchangeRate);
@@ -108,6 +102,25 @@ export default class HydrogenNucleusHelper {
     let amountB = numerator.div(x1);
     if(numerator.mod(x1).gt(0)) amountB = amountB.add(1);
     return amountB;
+  }
+
+  // as market taker
+  static calculateMarketOrderExactAMT(amountAMT: BigNumberish, exchangeRate: BytesLike, feePPM: BigNumberish) {
+    let amountAMM = BN.from(amountAMT);
+    let amountBMM = this.calculateAmountB(amountAMM, exchangeRate);
+    let amountBMT = amountBMM.mul(MAX_PPM).div(MAX_PPM.sub(feePPM));
+    let amountBFR = amountBMT.mul(feePPM).div(MAX_PPM);
+    return { amountAMM, amountBMM, amountBMT, amountBFR };
+  }
+
+  // as market taker
+  static calculateMarketOrderExactBMT(amountBMT: BigNumberish, exchangeRate: BytesLike, feePPM: BigNumberish) {
+    amountBMT = BN.from(amountBMT);
+    let amountBFR = amountBMT.mul(feePPM).div(MAX_PPM);
+    let amountBMM = amountBMT.sub(amountBFR);
+    let amountAMM = this.calculateAmountA(amountBMM, exchangeRate);
+    let amountAMT = amountAMM;
+    return { amountAMM, amountAMT, amountBMM, amountBFR };
   }
 
   static async logPools(nucleus:any) {

@@ -52,6 +52,7 @@ describe("HydrogenNucleus Integration", function () {
   let bobExternalLocation: string;
   let bobInternalLocation: string;
 
+  let defaultFeePPM = BN.from(2000);
 
   // fetch tokens
   let tokens: any[] = [];
@@ -158,7 +159,7 @@ describe("HydrogenNucleus Integration", function () {
       await nucleus.connect(owner).setSwapFeesForPairs([{
         tokenA: AddressZero,
         tokenB: AddressZero,
-        feePPM: 2000,
+        feePPM: defaultFeePPM,
         receiverLocation: feeReceiverLocation
       }]);
     });
@@ -184,9 +185,6 @@ describe("HydrogenNucleus Integration", function () {
       };
       let poolID = await nucleus.connect(alice).callStatic.createLimitOrderPool(params);
       let tx = await nucleus.connect(alice).createLimitOrderPool(params);
-      //let receipt = await tx.wait();
-      //console.log(receipt.events[0].event)
-      //console.log(receipt.events[0].args.poolID)
       // checks
       expect(poolID).eq(1001);
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
@@ -206,27 +204,35 @@ describe("HydrogenNucleus Integration", function () {
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, usdc.address, wbtc.address, exchangeRate, aliceExternalLocation);
       //await expect(tx).to.emit(usdc, "Transfer").withArgs(alice.address, nucleus.address, amountA); // cannot fetch events from contract off fork network
     });
-    it("scenario 2: fill limit order", async function () {
+    it("scenario 2.1: partially fill limit order", async function () {
       // Bob wants to sell his WBTC for USDC at the best available price. He has 0.1 WBTC in his wallet that he wants to sell. He sees Alice's limit order (10,000 USDC to WBTC @ 25,000 USDC/WBTC). He is willing to partially fill that order and after a 0.2% swap fee expects to receive 2,495 USDC.
       let poolID = 1001;
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
       let pool = await nucleus.getLimitOrderPool(poolID);
-      let amountB = WeiPerWbtc.mul(1).div(10);
-      let amountAFromPool = HydrogenNucleusHelper.calculateAmountA(amountB, pool.exchangeRate);
-      let amountAToFeeReceiver = amountAFromPool.mul(2000).div(MAX_PPM);
-      let amountAToMarketTaker = amountAFromPool.sub(amountAToFeeReceiver);
-      expect(amountAFromPool).eq(WeiPerUsdc.mul(2500));
-      expect(amountAToFeeReceiver).eq(WeiPerUsdc.mul(5));
-      expect(amountAToMarketTaker).eq(WeiPerUsdc.mul(2495));
-      await mintTokens(wbtc, bob.address, amountB);
+      let amountBMT = WeiPerWbtc.mul(1).div(10);
+      let amountBFR = amountBMT.mul(defaultFeePPM).div(MAX_PPM);
+      let amountBMM = amountBMT.sub(amountBFR);
+      let amountAMM = HydrogenNucleusHelper.calculateAmountA(amountBMM, pool.exchangeRate);
+      let amountAMT = amountAMM;
+      let amountAFR = BN.from(0);
+      expect(amountAMM).eq(WeiPerUsdc.mul(2495));
+      await mintTokens(wbtc, bob.address, amountBMT);
       await wbtc.contract.connect(bob).approve(nucleus.address, MaxUint256);
+      let balPlA1 = await nucleus.getTokenBalance(usdc.address, poolLocation);
+      let balPlB1 = await nucleus.getTokenBalance(wbtc.address, poolLocation);
+      let balMtA1 = await nucleus.getTokenBalance(usdc.address, bobExternalLocation);
+      let balMtB1 = await nucleus.getTokenBalance(wbtc.address, bobExternalLocation);
+      let balMmA1 = await nucleus.getTokenBalance(usdc.address, pool.locationB);
+      let balMmB1 = await nucleus.getTokenBalance(wbtc.address, pool.locationB);
+      let balFrA1 = await nucleus.getTokenBalance(usdc.address, feeReceiverLocation);
+      let balFrB1 = await nucleus.getTokenBalance(wbtc.address, feeReceiverLocation);
       // bob executes a market order
       let params = {
         poolID: poolID,
         tokenA: usdc.address,
         tokenB: wbtc.address,
-        amountA: amountAToMarketTaker,
-        amountB: amountB,
+        amountA: amountAMT,
+        amountB: amountBMT,
         locationA: bobExternalLocation,
         locationB: bobExternalLocation,
         flashSwapCallee: AddressZero,
@@ -234,21 +240,82 @@ describe("HydrogenNucleus Integration", function () {
       };
       let tx = await nucleus.connect(bob).executeMarketOrder(params);
       // checks
-      let amountAInPool = WeiPerUsdc.mul(7500);
-      expect(await nucleus.getTokenBalance(usdc.address, aliceExternalLocation)).eq(0);
-      expect(await nucleus.getTokenBalance(usdc.address, poolLocation)).eq(amountAInPool);
-      expect(await nucleus.getTokenBalance(usdc.address, nucleusExternalLocation)).eq(amountAInPool.add(amountAToFeeReceiver));
-      expect(await nucleus.getTokenBalance(usdc.address, bobExternalLocation)).eq(amountAToMarketTaker);
-      expect(await nucleus.getTokenBalance(usdc.address, feeReceiverLocation)).eq(amountAToFeeReceiver);
-      expect(await nucleus.getTokenBalance(wbtc.address, aliceExternalLocation)).eq(amountB);
-      expect(await nucleus.getTokenBalance(wbtc.address, poolLocation)).eq(0);
-      expect(await nucleus.getTokenBalance(wbtc.address, nucleusExternalLocation)).eq(0);
-      expect(await nucleus.getTokenBalance(wbtc.address, bobExternalLocation)).eq(0);
-      expect(await nucleus.getTokenBalance(wbtc.address, feeReceiverLocation)).eq(0);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(usdc.address, poolLocation, bobExternalLocation, amountAToMarketTaker);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(usdc.address, poolLocation, feeReceiverLocation, amountAToFeeReceiver);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, bobExternalLocation, poolLocation, amountB);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, poolLocation, aliceExternalLocation, amountB);
+      let balPlA2 = await nucleus.getTokenBalance(usdc.address, poolLocation);
+      let balPlB2 = await nucleus.getTokenBalance(wbtc.address, poolLocation);
+      let balMtA2 = await nucleus.getTokenBalance(usdc.address, bobExternalLocation);
+      let balMtB2 = await nucleus.getTokenBalance(wbtc.address, bobExternalLocation);
+      let balMmA2 = await nucleus.getTokenBalance(usdc.address, pool.locationB);
+      let balMmB2 = await nucleus.getTokenBalance(wbtc.address, pool.locationB);
+      let balFrA2 = await nucleus.getTokenBalance(usdc.address, feeReceiverLocation);
+      let balFrB2 = await nucleus.getTokenBalance(wbtc.address, feeReceiverLocation);
+      expect(balPlA1.sub(balPlA2)).eq(amountAMM);
+      expect(balPlB2.sub(balPlB1)).eq(0);
+      expect(balMtA2.sub(balMtA1)).eq(amountAMT);
+      expect(balMtB1.sub(balMtB2)).eq(amountBMT);
+      expect(balMmA1.sub(balMmA2)).eq(0);
+      expect(balMmB2.sub(balMmB1)).eq(amountBMM);
+      expect(balFrA2.sub(balFrA1)).eq(amountAFR);
+      expect(balFrB2.sub(balFrB1)).eq(amountBFR);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(usdc.address, poolLocation, bobExternalLocation, amountAMT);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, bobExternalLocation, poolLocation, amountBMM);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, poolLocation, aliceExternalLocation, amountBMM);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, bobExternalLocation, feeReceiverLocation, amountBFR);
+      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, usdc.address, wbtc.address, amountAMT, amountBMT, amountBMM);
+    });
+    it("scenario 2.2: completely fill limit order", async function () {
+      let poolID = 1001;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let pool = await nucleus.getLimitOrderPool(poolID);
+      let amountAMM = await nucleus.getTokenBalance(usdc.address, poolLocation);
+      let amountAMT = amountAMM;
+      let amountBMM = HydrogenNucleusHelper.calculateAmountB(amountAMM, pool.exchangeRate);
+      let amountBMT = amountBMM.mul(MAX_PPM).div(MAX_PPM.sub(defaultFeePPM))
+      let amountBFR = amountBMT.mul(defaultFeePPM).div(MAX_PPM);
+      let amountAFR = BN.from(0);
+      await mintTokens(wbtc, bob.address, amountBMT);
+      let balPlA1 = await nucleus.getTokenBalance(usdc.address, poolLocation);
+      let balPlB1 = await nucleus.getTokenBalance(wbtc.address, poolLocation);
+      let balMtA1 = await nucleus.getTokenBalance(usdc.address, bobExternalLocation);
+      let balMtB1 = await nucleus.getTokenBalance(wbtc.address, bobExternalLocation);
+      let balMmA1 = await nucleus.getTokenBalance(usdc.address, pool.locationB);
+      let balMmB1 = await nucleus.getTokenBalance(wbtc.address, pool.locationB);
+      let balFrA1 = await nucleus.getTokenBalance(usdc.address, feeReceiverLocation);
+      let balFrB1 = await nucleus.getTokenBalance(wbtc.address, feeReceiverLocation);
+      // bob executes a market order
+      let params = {
+        poolID: poolID,
+        tokenA: usdc.address,
+        tokenB: wbtc.address,
+        amountA: amountAMT,
+        amountB: amountBMT,
+        locationA: bobExternalLocation,
+        locationB: bobExternalLocation,
+        flashSwapCallee: AddressZero,
+        callbackData: "0x"
+      };
+      let tx = await nucleus.connect(bob).executeMarketOrder(params);
+      // checks
+      let balPlA2 = await nucleus.getTokenBalance(usdc.address, poolLocation);
+      let balPlB2 = await nucleus.getTokenBalance(wbtc.address, poolLocation);
+      let balMtA2 = await nucleus.getTokenBalance(usdc.address, bobExternalLocation);
+      let balMtB2 = await nucleus.getTokenBalance(wbtc.address, bobExternalLocation);
+      let balMmA2 = await nucleus.getTokenBalance(usdc.address, pool.locationB);
+      let balMmB2 = await nucleus.getTokenBalance(wbtc.address, pool.locationB);
+      let balFrA2 = await nucleus.getTokenBalance(usdc.address, feeReceiverLocation);
+      let balFrB2 = await nucleus.getTokenBalance(wbtc.address, feeReceiverLocation);
+      expect(balPlA1.sub(balPlA2)).eq(amountAMM);
+      expect(balPlB2.sub(balPlB1)).eq(0);
+      expect(balMtA2.sub(balMtA1)).eq(amountAMT);
+      expect(balMtB1.sub(balMtB2)).eq(amountBMT);
+      expect(balMmA1.sub(balMmA2)).eq(0);
+      expect(balMmB2.sub(balMmB1)).eq(amountBMM);
+      expect(balFrA2.sub(balFrA1)).eq(amountAFR);
+      expect(balFrB2.sub(balFrB1)).eq(amountBFR);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(usdc.address, poolLocation, bobExternalLocation, amountAMT);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, bobExternalLocation, poolLocation, amountBMM);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, poolLocation, aliceExternalLocation, amountBMM);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wbtc.address, bobExternalLocation, feeReceiverLocation, amountBFR);
+      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, usdc.address, wbtc.address, amountAMT, amountBMT, amountBMM);
     });
     it("scenario 3: create wbtc-usdc grid order", async function () {
       let exchangeRateSellUsdcBuyWbtc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(25_000), WeiPerWbtc);
@@ -264,11 +331,11 @@ describe("HydrogenNucleus Integration", function () {
         tokenSources: [{
           token: usdc.address,
           amount: amountUsdcDeposit,
-          loc: aliceExternalLocation
+          location: aliceExternalLocation
         },{
           token: wbtc.address,
           amount: amountWbtcDeposit,
-          loc: aliceExternalLocation
+          location: aliceExternalLocation
         }],
         tradeRequests: [{
           tokenA: usdc.address,
@@ -285,9 +352,6 @@ describe("HydrogenNucleus Integration", function () {
       };
       let poolID = await nucleus.connect(alice).callStatic.createGridOrderPool(params);
       let tx = await nucleus.connect(alice).createGridOrderPool(params);
-      //let receipt = await tx.wait();
-      //console.log(receipt.events[0].event)
-      //console.log(receipt.events[0].args.poolID)
       // checks
       expect(poolID).eq(2002);
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
@@ -340,15 +404,15 @@ describe("HydrogenNucleus Integration", function () {
         tokenSources: [{
           token: dai.address,
           amount: amountDaiDeposit,
-          loc: aliceExternalLocation
+          location: aliceExternalLocation
         },{
           token: usdc.address,
           amount: amountUsdcDeposit,
-          loc: aliceExternalLocation
+          location: aliceExternalLocation
         },{
           token: usdt.address,
           amount: amountUsdtDeposit,
-          loc: aliceExternalLocation
+          location: aliceExternalLocation
         }],
         tradeRequests: [{
           tokenA: dai.address,
@@ -385,9 +449,6 @@ describe("HydrogenNucleus Integration", function () {
       };
       let poolID = await nucleus.connect(alice).callStatic.createGridOrderPool(params);
       let tx = await nucleus.connect(alice).createGridOrderPool(params);
-      //let receipt = await tx.wait();
-      //console.log(receipt.events[0].event)
-      //console.log(receipt.events[0].args.poolID)
       // checks
       expect(poolID).eq(3002);
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
@@ -506,6 +567,3 @@ describe("HydrogenNucleus Integration", function () {
     }
   }
 });
-
-//describe("", function () {});
-//it("", async function () {});

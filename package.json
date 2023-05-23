@@ -24,7 +24,7 @@
     "ethers": "^5.7.2",
     "hardhat": "^2.14.0",
     "hardhat-gas-reporter": "^1.0.9",
-    "solc-0.8": "npm:solc@0.8.20",
+    "solc-0.8": "npm:solc@0.8.19",
     "solidity-coverage": "^0.8.2",
     "solidity-docgen": "^0.5.16",
     "ts-node": "^10.9.1",
