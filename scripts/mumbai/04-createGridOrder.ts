@@ -24,7 +24,7 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0xe0A81641Db430a4D8E4c76bb8eB71755E24B6c9b";
+let NUCLEUS_ADDRESS = "0xd2174BfC96C96608C2EC7Bd8b5919f9e3603d37f";
 
 const LOCATION_THIS_POOL = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
@@ -96,11 +96,11 @@ async function createGridOrder1() {
     tokenSources: [{
       token: usdc.address,
       amount: amountUsdcDeposit,
-      loc: trader1ExternalLocation
+      location: trader1ExternalLocation
     },{
       token: wbtc.address,
       amount: amountWbtcDeposit,
-      loc: trader1ExternalLocation
+      location: trader1ExternalLocation
     }],
     tradeRequests: [{
       tokenA: usdc.address,
@@ -150,15 +150,15 @@ async function createGridOrder2() {
     tokenSources: [{
       token: dai.address,
       amount: amountDaiDeposit,
-      loc: trader1ExternalLocation
+      location: trader1ExternalLocation
     },{
       token: usdc.address,
       amount: amountUsdcDeposit,
-      loc: trader1ExternalLocation
+      location: trader1ExternalLocation
     },{
       token: usdt.address,
       amount: amountUsdtDeposit,
-      loc: trader1ExternalLocation
+      location: trader1ExternalLocation
     }],
     tradeRequests: [{
       tokenA: dai.address,

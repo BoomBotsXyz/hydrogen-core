@@ -18,7 +18,7 @@ import { setStorageAt, toBytes32 } from "../scripts/utilities/setStorage";
 import { decimalsToAmount } from "../scripts/utils/price";
 import { deployContract } from "../scripts/utils/deployContract";
 
-const { AddressZero, WeiPerEther, MaxUint256 } = ethers.constants;
+const { AddressZero, WeiPerEther, MaxUint256, Zero } = ethers.constants;
 const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
 const MAX_PPM = BN.from(1_000_000); // parts per million
 
@@ -3668,7 +3668,7 @@ describe("HydrogenNucleus-core", function () {
       let amountBMM = HydrogenNucleusHelper.calculateAmountB(amountAMM, pool.exchangeRate);
       let amountAMT = amountAMM;
       let amountBMT = amountBMM.mul(MAX_PPM).div(MAX_PPM.sub(fees.feePPM))
-      let amountAFR = BN.from(0);
+      let amountAFR = Zero;
       let amountBFR = amountBMT.mul(fees.feePPM).div(MAX_PPM);
       amountBMM = amountBMT.sub(amountBFR);
       expect(amountAMM).eq(amountBMM.mul(10).div(18));
@@ -3741,7 +3741,7 @@ describe("HydrogenNucleus-core", function () {
       let amountBMM = HydrogenNucleusHelper.calculateAmountB(amountAMM, pool.exchangeRate);
       let amountAMT = amountAMM;
       let amountBMT = amountBMM.mul(MAX_PPM).div(MAX_PPM.sub(fees.feePPM))
-      let amountAFR = BN.from(0);
+      let amountAFR = Zero;
       let amountBFR = amountBMT.mul(fees.feePPM).div(MAX_PPM);
       amountBMM = amountBMT.sub(amountBFR);
       expect(amountAMM).gt(0);
@@ -3813,7 +3813,7 @@ describe("HydrogenNucleus-core", function () {
       let amountBMM = HydrogenNucleusHelper.calculateAmountB(amountAMM, tradeRequest.exchangeRate);
       let amountAMT = amountAMM;
       let amountBMT = amountBMM.mul(MAX_PPM).div(MAX_PPM.sub(fees.feePPM))
-      let amountAFR = BN.from(0);
+      let amountAFR = Zero;
       let amountBFR = amountBMT.mul(fees.feePPM).div(MAX_PPM);
       amountBMM = amountBMT.sub(amountBFR);
       expect(amountAMM).gt(0);

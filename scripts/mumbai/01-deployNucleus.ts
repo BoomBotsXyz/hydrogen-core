@@ -23,7 +23,7 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0xe0A81641Db430a4D8E4c76bb8eB71755E24B6c9b";
+let NUCLEUS_ADDRESS = "0xd2174BfC96C96608C2EC7Bd8b5919f9e3603d37f";
 
 async function main() {
   let deployerAddress = await deployer.getAddress();
@@ -37,7 +37,7 @@ async function main() {
   if(!isChain(80001, "mumbai")) throw("Only run this on Polygon Mumbai or a local fork of Mumbai");
 
   await deployNucleus();
-  //await configureNucleus();
+  await configureNucleus();
   await logAddresses();
 }
 
@@ -55,7 +55,8 @@ async function deployNucleus() {
 
 async function configureNucleus() {
   console.log("Configuring Nucleus");
-  let txdata0 = nucleus.interface.encodeFunctionData("setBaseURI", ["https://hydrogenanalytics.hysland.finance/pools/?chainID=80001&poolID="]);
+  let txdata0 = nucleus.interface.encodeFunctionData("setContractURI", ["https://stats.hydrogen.hysland.finance/contract_uri/"]);
+  let txdata1 = nucleus.interface.encodeFunctionData("setBaseURI", ["https://stats.hydrogen.hysland.finance/pools/metadata/?chainID=80001&poolID="]);
   let dai = "0xF59FD8840DC9bb2d00Fe5c0BE0EdF637ACeC77E1";
   let usdc = "0xA9DC572c76Ead4197154d36bA3f4D0839353abbb";
   let usdt = "0x7a49D1804434Ad537e4cC0061865727b87E71cd8";
@@ -80,14 +81,15 @@ async function configureNucleus() {
       });
     }
   }
-  let txdata1 = nucleus.interface.encodeFunctionData("setSwapFeesForPairs", [swapFees]);
-  let txdata2 = nucleus.interface.encodeFunctionData("setFlashLoanFeesForTokens", [[{
+  let txdata2 = nucleus.interface.encodeFunctionData("setSwapFeesForPairs", [swapFees]);
+  let txdata3 = nucleus.interface.encodeFunctionData("setFlashLoanFeesForTokens", [[{
     // default fee: 0.09%
     token: AddressZero,
     feePPM: 900,
     receiverLocation: treasuryLocation
   }]]);
-  let tx = await nucleus.connect(deployer).multicall([txdata0, txdata1, txdata2], {...networkSettings.overrides, gasLimit: 10000000});
+  let tx = await nucleus.connect(deployer).multicall([txdata0, txdata1, txdata2, txdata3], {...networkSettings.overrides, gasLimit: 10000000});
+  console.log("tx:", tx);
   await tx.wait(networkSettings.confirmations);
   console.log("Configured Nucleus");
 }

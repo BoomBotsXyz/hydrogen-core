@@ -24,9 +24,9 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0xe0A81641Db430a4D8E4c76bb8eB71755E24B6c9b";
+let NUCLEUS_ADDRESS = "0xd2174BfC96C96608C2EC7Bd8b5919f9e3603d37f";
 
-let tokenMetadatas = {
+let tokenMetadatas:any = {
   "DAI": {"name":"Dai Stablecoin", "symbol":"DAI", "decimals":18, "artifact":"MockERC20PermitC", "address":"0xF59FD8840DC9bb2d00Fe5c0BE0EdF637ACeC77E1", "mintAmount":WeiPerEther.mul(1000)},
   "USDC": {"name":"USDCoin", "symbol":"USDC", "decimals":6, "artifact":"MockERC20PermitA", "address":"0xA9DC572c76Ead4197154d36bA3f4D0839353abbb", "mintAmount":WeiPerUsdc.mul(1000)},
   "USDT": {"name":"Tether USD", "symbol":"USDT", "decimals":6, "artifact":"MockERC20", "address":"0x7a49D1804434Ad537e4cC0061865727b87E71cd8", "mintAmount":WeiPerUsdc.mul(1000)},
@@ -46,12 +46,21 @@ async function main() {
   }
   if(!isChain(80001, "mumbai")) throw("Only run this on Polygon Mumbai or a local fork of Mumbai");
 
-  if(!await isDeployed(NUCLEUS_ADDRESS)) throw new Error("HydrogenNucleus not deployed");
-  if(!await isDeployed(tokenMetadatas["USDC"].address)) throw new Error("USDC not deployed");
-  if(!await isDeployed(tokenMetadatas["WBTC"].address)) throw new Error("WBTC not deployed");
+  await verifyDeployments()
   nucleus = await ethers.getContractAt("HydrogenNucleus", NUCLEUS_ADDRESS, trader1) as HydrogenNucleus;
 
   await createLimitOrder1();
+  await createLimitOrder2();
+}
+
+async function verifyDeployments() {
+  let nonDeploys:string[] = []
+  if(!await isDeployed(NUCLEUS_ADDRESS)) nonDeploys.push("HydrogenNucleus")
+  let symbols = Object.keys(tokenMetadatas);
+  for(let i = 0; i < symbols.length; ++i) {
+    if(!await isDeployed(tokenMetadatas[symbols[i]].address)) nonDeploys.push(symbols[i])
+  }
+  if(nonDeploys.length > 0) throw new Error(`${nonDeploys.join(", ")} not deployed`);
 }
 
 async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amount:BN) {
@@ -92,6 +101,36 @@ async function createLimitOrder1() {
     exchangeRate: exchangeRate,
     locationA: trader1ExternalLocation,
     locationB: trader1ExternalLocation,
+    amountA: amountA,
+    hptReceiver: trader1Address
+  }, {...networkSettings.overrides, gasLimit: 1000000});
+  console.log("tx:", tx);
+  let receipt = await tx.wait(networkSettings.confirmations);
+  if(!receipt || !receipt.events || receipt.events.length == 0) {
+    console.log(receipt)
+    throw new Error("events not found");
+  }
+  let poolID = (receipt.events as any)[0].args.poolID;
+  console.log(`Created limit order pool ${poolID}`);
+}
+
+async function createLimitOrder2() {
+  // sell doge for usdt at $0.10
+  let doge = await ethers.getContractAt("MockERC20", tokenMetadatas["DOGE"].address, trader1) as MockERC20;
+  let amountA = WeiPerWbtc.mul(10_000);
+  let amountB = WeiPerUsdc.mul(1_000);
+  let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(amountA, amountB);
+  await checkTokenBalancesAndAllowance(doge, trader1, amountA);
+  // create pool
+  console.log("Creating limit order pool");
+  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1Address);
+  let trader1InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(trader1Address);
+  let tx = await nucleus.connect(trader1).createLimitOrderPool({
+    tokenA: tokenMetadatas["DOGE"].address,
+    tokenB: tokenMetadatas["USDT"].address,
+    exchangeRate: exchangeRate,
+    locationA: trader1ExternalLocation,
+    locationB: trader1InternalLocation,
     amountA: amountA,
     hptReceiver: trader1Address
   }, {...networkSettings.overrides, gasLimit: 1000000});

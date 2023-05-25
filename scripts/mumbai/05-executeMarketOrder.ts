@@ -25,7 +25,7 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0xe0A81641Db430a4D8E4c76bb8eB71755E24B6c9b";
+let NUCLEUS_ADDRESS = "0xd2174BfC96C96608C2EC7Bd8b5919f9e3603d37f";
 
 let tokenMetadatas = {
   "DAI": {"name":"Dai Stablecoin", "symbol":"DAI", "decimals":18, "artifact":"MockERC20PermitC", "address":"0xF59FD8840DC9bb2d00Fe5c0BE0EdF637ACeC77E1", "mintAmount":WeiPerEther.mul(1000)},
@@ -78,16 +78,17 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
 
 async function executeMarketOrder1() {
   // Bob wants to sell his WBTC for USDC at the best available price. He has 0.1 WBTC in his wallet that he wants to sell. He sees Alice's limit order (10,000 USDC to WBTC @ 25,000 USDC/WBTC). He is willing to partially fill that order and after a 0.2% swap fee expects to receive 2,495 USDC.
+  let usdc = await ethers.getContractAt("MockERC20", tokenMetadatas["USDC"].address, trader2) as MockERC20;
+  let wbtc = await ethers.getContractAt("MockERC20", tokenMetadatas["WBTC"].address, trader2) as MockERC20;
   let poolID = 1001;
   let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
   let pool = await nucleus.getLimitOrderPool(poolID);
-  let amountB = WeiPerWbtc.mul(1).div(10);
-  let amountAFromPool = HydrogenNucleusHelper.calculateAmountA(amountB, pool.exchangeRate);
-  let amountAToFeeReceiver = amountAFromPool.mul(2000).div(MAX_PPM);
-  let amountAToMarketTaker = amountAFromPool.sub(amountAToFeeReceiver);
-  let usdc = await ethers.getContractAt("MockERC20", tokenMetadatas["USDC"].address, trader2) as MockERC20;
-  let wbtc = await ethers.getContractAt("MockERC20", tokenMetadatas["WBTC"].address, trader2) as MockERC20;
-  await checkTokenBalancesAndAllowance(wbtc, trader2, amountB);
+  let fees = await nucleus.getSwapFeeForPair(usdc.address, wbtc.address);
+  let amountBMT = WeiPerWbtc.mul(1).div(10);
+  let { amountAMT } = HydrogenNucleusHelper.calculateMarketOrderExactBMT(amountBMT, pool.exchangeRate, fees.feePPM);
+  let poolBalance = await nucleus.getTokenBalance(usdc.address, poolLocation);
+  if(poolBalance.lt(amountAMT)) throw new Error("insufficient capacity for trade");
+  await checkTokenBalancesAndAllowance(wbtc, trader2, amountBMT);
   let trader2ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader2Address);
   // execute market order
   console.log("Executing market order");
@@ -95,8 +96,8 @@ async function executeMarketOrder1() {
     poolID: poolID,
     tokenA: usdc.address,
     tokenB: wbtc.address,
-    amountA: amountAToMarketTaker,
-    amountB: amountB,
+    amountA: amountAMT,
+    amountB: amountBMT,
     locationA: trader2ExternalLocation,
     locationB: trader2ExternalLocation,
     flashSwapCallee: AddressZero,
@@ -104,7 +105,7 @@ async function executeMarketOrder1() {
   };
   let tx = await nucleus.connect(trader2).executeMarketOrder(params);
   console.log("tx:", tx);
-  let receipt = await tx.wait(networkSettings.confirmations);
+  await tx.wait(networkSettings.confirmations);
   console.log("Executed market order");
 }
 

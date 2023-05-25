@@ -15,7 +15,7 @@ import { getNetworkSettings } from "../scripts/utils/getNetworkSettings";
 import HydrogenNucleusHelper from "../scripts/utils/HydrogenNucleusHelper";
 import { deployContract } from "../scripts/utils/deployContract";
 
-const { AddressZero, WeiPerEther, MaxUint256 } = ethers.constants;
+const { AddressZero, WeiPerEther, MaxUint256, Zero } = ethers.constants;
 const MAX_PPM = BN.from(1_000_000); // parts per million
 
 // a series of random cases to test math
@@ -241,7 +241,7 @@ describe("HydrogenNucleus-random", function () {
   function randomTokenAmount() {
     const MIN_DECIMALS = 2;
     const MAX_DECIMALS = 28;
-    let amount = BN.from(0);
+    let amount = Zero;
     while(amount.eq(0)) {
       let decimals = Math.floor(Math.random() * (MAX_DECIMALS - MIN_DECIMALS)) + MIN_DECIMALS + 1;
       let base = BN.from(10).pow(decimals);

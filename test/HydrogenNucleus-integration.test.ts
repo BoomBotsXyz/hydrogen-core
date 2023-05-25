@@ -19,7 +19,7 @@ import { findERC20BalanceOfSlot, manipulateERC20BalanceOf, setStorageAt, toBytes
 import { decimalsToAmount } from "../scripts/utils/price";
 import { deployContract } from "../scripts/utils/deployContract";
 
-const { AddressZero, WeiPerEther, MaxUint256 } = ethers.constants;
+const { AddressZero, WeiPerEther, MaxUint256, Zero } = ethers.constants;
 const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
 const WeiPerWbtc = BN.from(100_000_000); // 8 decimals
 const MAX_PPM = BN.from(1_000_000); // parts per million
@@ -214,7 +214,7 @@ describe("HydrogenNucleus Integration", function () {
       let amountBMM = amountBMT.sub(amountBFR);
       let amountAMM = HydrogenNucleusHelper.calculateAmountA(amountBMM, pool.exchangeRate);
       let amountAMT = amountAMM;
-      let amountAFR = BN.from(0);
+      let amountAFR = Zero;
       expect(amountAMM).eq(WeiPerUsdc.mul(2495));
       await mintTokens(wbtc, bob.address, amountBMT);
       await wbtc.contract.connect(bob).approve(nucleus.address, MaxUint256);
@@ -271,7 +271,7 @@ describe("HydrogenNucleus Integration", function () {
       let amountBMM = HydrogenNucleusHelper.calculateAmountB(amountAMM, pool.exchangeRate);
       let amountBMT = amountBMM.mul(MAX_PPM).div(MAX_PPM.sub(defaultFeePPM))
       let amountBFR = amountBMT.mul(defaultFeePPM).div(MAX_PPM);
-      let amountAFR = BN.from(0);
+      let amountAFR = Zero;
       await mintTokens(wbtc, bob.address, amountBMT);
       let balPlA1 = await nucleus.getTokenBalance(usdc.address, poolLocation);
       let balPlB1 = await nucleus.getTokenBalance(wbtc.address, poolLocation);
