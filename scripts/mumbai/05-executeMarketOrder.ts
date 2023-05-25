@@ -7,7 +7,6 @@ dotenv_config();
 
 const accounts = JSON.parse(process.env.ACCOUNTS || "{}");
 const trader2 = new ethers.Wallet(accounts.trader2.key, provider);
-let trader2Address: string;
 
 import { HydrogenNucleus, MockERC20 } from "./../../typechain-types";
 import { expectDeployed, isDeployed } from "./../utilities/expectDeployed";
@@ -27,7 +26,7 @@ let chainID: number;
 let nucleus: HydrogenNucleus;
 let NUCLEUS_ADDRESS = "0xd2174BfC96C96608C2EC7Bd8b5919f9e3603d37f";
 
-let tokenMetadatas = {
+let tokenMetadatas:any = {
   "DAI": {"name":"Dai Stablecoin", "symbol":"DAI", "decimals":18, "artifact":"MockERC20PermitC", "address":"0xF59FD8840DC9bb2d00Fe5c0BE0EdF637ACeC77E1", "mintAmount":WeiPerEther.mul(1000)},
   "USDC": {"name":"USDCoin", "symbol":"USDC", "decimals":6, "artifact":"MockERC20PermitA", "address":"0xA9DC572c76Ead4197154d36bA3f4D0839353abbb", "mintAmount":WeiPerUsdc.mul(1000)},
   "USDT": {"name":"Tether USD", "symbol":"USDT", "decimals":6, "artifact":"MockERC20", "address":"0x7a49D1804434Ad537e4cC0061865727b87E71cd8", "mintAmount":WeiPerUsdc.mul(1000)},
@@ -37,8 +36,7 @@ let tokenMetadatas = {
 };
 
 async function main() {
-  trader2Address = await trader2.getAddress();
-  console.log(`Using ${trader2Address} as trader2`);
+  console.log(`Using ${trader2.address} as trader2`);
 
   chainID = (await provider.getNetwork()).chainId;
   networkSettings = getNetworkSettings(chainID);
@@ -47,12 +45,20 @@ async function main() {
   }
   if(!isChain(80001, "mumbai")) throw("Only run this on Polygon Mumbai or a local fork of Mumbai");
 
-  if(!await isDeployed(NUCLEUS_ADDRESS)) throw new Error("HydrogenNucleus not deployed");
-  if(!await isDeployed(tokenMetadatas["USDC"].address)) throw new Error("USDC not deployed");
-  if(!await isDeployed(tokenMetadatas["WBTC"].address)) throw new Error("WBTC not deployed");
+  await verifyDeployments()
   nucleus = await ethers.getContractAt("HydrogenNucleus", NUCLEUS_ADDRESS, trader2) as HydrogenNucleus;
 
   await executeMarketOrder1();
+}
+
+async function verifyDeployments() {
+  let nonDeploys:string[] = []
+  if(!await isDeployed(NUCLEUS_ADDRESS)) nonDeploys.push("HydrogenNucleus")
+  let symbols = Object.keys(tokenMetadatas);
+  for(let i = 0; i < symbols.length; ++i) {
+    if(!await isDeployed(tokenMetadatas[symbols[i]].address)) nonDeploys.push(symbols[i])
+  }
+  if(nonDeploys.length > 0) throw new Error(`${nonDeploys.join(", ")} not deployed`);
 }
 
 async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amount:BN) {
@@ -76,6 +82,14 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
   }
 }
 
+async function executeMarketOrder(params:any) {
+  console.log("Executing market order");
+  let tx = await nucleus.connect(trader2).executeMarketOrder(params);
+  console.log("tx:", tx);
+  await tx.wait(networkSettings.confirmations);
+  console.log("Executed market order");
+}
+
 async function executeMarketOrder1() {
   // Bob wants to sell his WBTC for USDC at the best available price. He has 0.1 WBTC in his wallet that he wants to sell. He sees Alice's limit order (10,000 USDC to WBTC @ 25,000 USDC/WBTC). He is willing to partially fill that order and after a 0.2% swap fee expects to receive 2,495 USDC.
   let usdc = await ethers.getContractAt("MockERC20", tokenMetadatas["USDC"].address, trader2) as MockERC20;
@@ -89,9 +103,8 @@ async function executeMarketOrder1() {
   let poolBalance = await nucleus.getTokenBalance(usdc.address, poolLocation);
   if(poolBalance.lt(amountAMT)) throw new Error("insufficient capacity for trade");
   await checkTokenBalancesAndAllowance(wbtc, trader2, amountBMT);
-  let trader2ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader2Address);
+  let trader2ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader2.address);
   // execute market order
-  console.log("Executing market order");
   let params = {
     poolID: poolID,
     tokenA: usdc.address,
@@ -103,10 +116,7 @@ async function executeMarketOrder1() {
     flashSwapCallee: AddressZero,
     callbackData: "0x"
   };
-  let tx = await nucleus.connect(trader2).executeMarketOrder(params);
-  console.log("tx:", tx);
-  await tx.wait(networkSettings.confirmations);
-  console.log("Executed market order");
+  await executeMarketOrder(params);
 }
 
 main()

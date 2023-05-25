@@ -7,7 +7,6 @@ dotenv_config();
 
 const accounts = JSON.parse(process.env.ACCOUNTS || "{}");
 const trader1 = new ethers.Wallet(accounts.trader1.key, provider);
-let trader1Address: string;
 
 import { HydrogenNucleus, MockERC20 } from "./../../typechain-types";
 import { expectDeployed, isDeployed } from "./../utilities/expectDeployed";
@@ -28,7 +27,7 @@ let NUCLEUS_ADDRESS = "0xd2174BfC96C96608C2EC7Bd8b5919f9e3603d37f";
 
 const LOCATION_THIS_POOL = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-let tokenMetadatas = {
+let tokenMetadatas:any = {
   "DAI": {"name":"Dai Stablecoin", "symbol":"DAI", "decimals":18, "artifact":"MockERC20PermitC", "address":"0xF59FD8840DC9bb2d00Fe5c0BE0EdF637ACeC77E1", "mintAmount":WeiPerEther.mul(1000)},
   "USDC": {"name":"USDCoin", "symbol":"USDC", "decimals":6, "artifact":"MockERC20PermitA", "address":"0xA9DC572c76Ead4197154d36bA3f4D0839353abbb", "mintAmount":WeiPerUsdc.mul(1000)},
   "USDT": {"name":"Tether USD", "symbol":"USDT", "decimals":6, "artifact":"MockERC20", "address":"0x7a49D1804434Ad537e4cC0061865727b87E71cd8", "mintAmount":WeiPerUsdc.mul(1000)},
@@ -38,8 +37,7 @@ let tokenMetadatas = {
 };
 
 async function main() {
-  trader1Address = await trader1.getAddress();
-  console.log(`Using ${trader1Address} as trader1`);
+  console.log(`Using ${trader1.address} as trader1`);
 
   chainID = (await provider.getNetwork()).chainId;
   networkSettings = getNetworkSettings(chainID);
@@ -48,13 +46,21 @@ async function main() {
   }
   if(!isChain(80001, "mumbai")) throw("Only run this on Polygon Mumbai or a local fork of Mumbai");
 
-  if(!await isDeployed(NUCLEUS_ADDRESS)) throw new Error("HydrogenNucleus not deployed");
-  if(!await isDeployed(tokenMetadatas["USDC"].address)) throw new Error("USDC not deployed");
-  if(!await isDeployed(tokenMetadatas["WBTC"].address)) throw new Error("WBTC not deployed");
+  await verifyDeployments()
   nucleus = await ethers.getContractAt("HydrogenNucleus", NUCLEUS_ADDRESS, trader1) as HydrogenNucleus;
 
   await createGridOrder1();
   await createGridOrder2();
+}
+
+async function verifyDeployments() {
+  let nonDeploys:string[] = []
+  if(!await isDeployed(NUCLEUS_ADDRESS)) nonDeploys.push("HydrogenNucleus")
+  let symbols = Object.keys(tokenMetadatas);
+  for(let i = 0; i < symbols.length; ++i) {
+    if(!await isDeployed(tokenMetadatas[symbols[i]].address)) nonDeploys.push(symbols[i])
+  }
+  if(nonDeploys.length > 0) throw new Error(`${nonDeploys.join(", ")} not deployed`);
 }
 
 async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amount:BN) {
@@ -79,19 +85,31 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
   }
 }
 
+async function createGridOrder(params:any) {
+  let tx = await nucleus.connect(trader1).createGridOrderPool(params, networkSettings.overrides);
+  console.log("tx:", tx);
+  let receipt = await tx.wait(networkSettings.confirmations);
+  if(!receipt || !receipt.events || receipt.events.length == 0) {
+    console.log(receipt)
+    throw new Error("events not found");
+  }
+  let poolID = (receipt.events as any)[0].args.poolID;
+  console.log(`Created grid order pool ${poolID}`);
+}
+
 async function createGridOrder1() {
   // wbtc-usdc
   let usdc = await ethers.getContractAt("MockERC20", tokenMetadatas["USDC"].address, trader1) as MockERC20;
   let wbtc = await ethers.getContractAt("MockERC20", tokenMetadatas["WBTC"].address, trader1) as MockERC20;
   let exchangeRateSellUsdcBuyWbtc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(25_000), WeiPerWbtc);
-  let exchangeRateSellWbtcBuyUsdc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerWbtc, WeiPerUsdc.mul(30_000));
+  let exchangeRateSellWbtcBuyUsdc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerWbtc, WeiPerUsdc.mul(26_000));
   let amountUsdcDeposit = WeiPerUsdc.mul(10_000);
   let amountWbtcDeposit = WeiPerWbtc;
   await checkTokenBalancesAndAllowance(usdc, trader1, amountUsdcDeposit);
   await checkTokenBalancesAndAllowance(wbtc, trader1, amountWbtcDeposit);
   // create pool
   console.log("Creating grid order pool");
-  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1Address);
+  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1.address);
   let params = {
     tokenSources: [{
       token: usdc.address,
@@ -113,17 +131,9 @@ async function createGridOrder1() {
       exchangeRate: exchangeRateSellWbtcBuyUsdc,
       locationB: LOCATION_THIS_POOL
     }],
-    hptReceiver: trader1Address
+    hptReceiver: trader1.address
   };
-  let tx = await nucleus.connect(trader1).createGridOrderPool(params, networkSettings.overrides);
-  console.log("tx:", tx);
-  let receipt = await tx.wait(networkSettings.confirmations);
-  if(!receipt || !receipt.events || receipt.events.length == 0) {
-    console.log(receipt)
-    throw new Error("events not found");
-  }
-  let poolID = (receipt.events as any)[0].args.poolID;
-  console.log(`Created grid order pool ${poolID}`);
+  await createGridOrder(params);
 }
 
 async function createGridOrder2() {
@@ -145,7 +155,7 @@ async function createGridOrder2() {
   await checkTokenBalancesAndAllowance(usdt, trader1, amountUsdtDeposit);
   // create pool
   console.log("Creating grid order pool");
-  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1Address);
+  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1.address);
   let params = {
     tokenSources: [{
       token: dai.address,
@@ -191,17 +201,9 @@ async function createGridOrder2() {
       exchangeRate: exchangeRateSellUsdtBuyUsdc,
       locationB: LOCATION_THIS_POOL
     }],
-    hptReceiver: trader1Address
+    hptReceiver: trader1.address
   };
-  let tx = await nucleus.connect(trader1).createGridOrderPool(params, networkSettings.overrides);
-  console.log("tx:", tx);
-  let receipt = await tx.wait(networkSettings.confirmations);
-  if(!receipt || !receipt.events || receipt.events.length == 0) {
-    console.log(receipt)
-    throw new Error("events not found");
-  }
-  let poolID = (receipt.events as any)[0].args.poolID;
-  console.log(`Created grid order pool ${poolID}`);
+  await createGridOrder(params);
 }
 
 main()

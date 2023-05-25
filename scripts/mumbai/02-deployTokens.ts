@@ -31,8 +31,7 @@ let tokenMetadatas = [
 ];
 
 async function main() {
-  let deployerAddress = await deployer.getAddress();
-  console.log(`Using ${deployerAddress} as deployer and owner`);
+  console.log(`Using ${deployer.address} as deployer and owner`);
 
   chainID = (await provider.getNetwork()).chainId;
   networkSettings = getNetworkSettings(chainID);

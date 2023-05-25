@@ -7,7 +7,6 @@ dotenv_config();
 
 const accounts = JSON.parse(process.env.ACCOUNTS || "{}");
 const trader1 = new ethers.Wallet(accounts.trader1.key, provider);
-let trader1Address: string;
 
 import { HydrogenNucleus, MockERC20 } from "./../../typechain-types";
 import { expectDeployed, isDeployed } from "./../utilities/expectDeployed";
@@ -36,8 +35,7 @@ let tokenMetadatas:any = {
 };
 
 async function main() {
-  trader1Address = await trader1.getAddress();
-  console.log(`Using ${trader1Address} as trader1`);
+  console.log(`Using ${trader1.address} as trader1`);
 
   chainID = (await provider.getNetwork()).chainId;
   networkSettings = getNetworkSettings(chainID);
@@ -84,26 +82,9 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
   }
 }
 
-async function createLimitOrder1() {
-  // Alice is a first time Hydrogen user and wants to place a limit order to buy WBTC using USDC. She has 10,000 USDC in her wallet and is willing to pay 25,000 USDC/WBTC, expecting to receive 0.4 WBTC.
-  // tokenA = USDC, tokenB = WBTC
-  let usdc = await ethers.getContractAt("MockERC20", tokenMetadatas["USDC"].address, trader1) as MockERC20;
-  let amountA = WeiPerUsdc.mul(10_000);
-  let amountB = WeiPerWbtc.mul(4).div(10);
-  let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(amountA, amountB);
-  await checkTokenBalancesAndAllowance(usdc, trader1, amountA);
-  // create pool
-  console.log("Creating limit order pool");
-  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1Address);
-  let tx = await nucleus.connect(trader1).createLimitOrderPool({
-    tokenA: tokenMetadatas["USDC"].address,
-    tokenB: tokenMetadatas["WBTC"].address,
-    exchangeRate: exchangeRate,
-    locationA: trader1ExternalLocation,
-    locationB: trader1ExternalLocation,
-    amountA: amountA,
-    hptReceiver: trader1Address
-  }, {...networkSettings.overrides, gasLimit: 1000000});
+async function createLimitOrder(params:any) {
+console.log("Creating limit order pool");
+  let tx = await nucleus.connect(trader1).createLimitOrderPool(params, {...networkSettings.overrides, gasLimit: 1000000});
   console.log("tx:", tx);
   let receipt = await tx.wait(networkSettings.confirmations);
   if(!receipt || !receipt.events || receipt.events.length == 0) {
@@ -114,6 +95,28 @@ async function createLimitOrder1() {
   console.log(`Created limit order pool ${poolID}`);
 }
 
+async function createLimitOrder1() {
+  // Alice is a first time Hydrogen user and wants to place a limit order to buy WBTC using USDC. She has 10,000 USDC in her wallet and is willing to pay 25,000 USDC/WBTC, expecting to receive 0.4 WBTC.
+  // tokenA = USDC, tokenB = WBTC
+  let usdc = await ethers.getContractAt("MockERC20", tokenMetadatas["USDC"].address, trader1) as MockERC20;
+  let amountA = WeiPerUsdc.mul(10_000);
+  let amountB = WeiPerWbtc.mul(4).div(10);
+  let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(amountA, amountB);
+  await checkTokenBalancesAndAllowance(usdc, trader1, amountA);
+  // create pool
+  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1.address);
+  let params = {
+    tokenA: tokenMetadatas["USDC"].address,
+    tokenB: tokenMetadatas["WBTC"].address,
+    exchangeRate: exchangeRate,
+    locationA: trader1ExternalLocation,
+    locationB: trader1ExternalLocation,
+    amountA: amountA,
+    hptReceiver: trader1.address
+  }
+  await createLimitOrder(params);
+}
+
 async function createLimitOrder2() {
   // sell doge for usdt at $0.10
   let doge = await ethers.getContractAt("MockERC20", tokenMetadatas["DOGE"].address, trader1) as MockERC20;
@@ -122,26 +125,18 @@ async function createLimitOrder2() {
   let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(amountA, amountB);
   await checkTokenBalancesAndAllowance(doge, trader1, amountA);
   // create pool
-  console.log("Creating limit order pool");
-  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1Address);
-  let trader1InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(trader1Address);
-  let tx = await nucleus.connect(trader1).createLimitOrderPool({
+  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1.address);
+  let trader1InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(trader1.address);
+  let params = {
     tokenA: tokenMetadatas["DOGE"].address,
     tokenB: tokenMetadatas["USDT"].address,
     exchangeRate: exchangeRate,
     locationA: trader1ExternalLocation,
     locationB: trader1InternalLocation,
     amountA: amountA,
-    hptReceiver: trader1Address
-  }, {...networkSettings.overrides, gasLimit: 1000000});
-  console.log("tx:", tx);
-  let receipt = await tx.wait(networkSettings.confirmations);
-  if(!receipt || !receipt.events || receipt.events.length == 0) {
-    console.log(receipt)
-    throw new Error("events not found");
+    hptReceiver: trader1.address
   }
-  let poolID = (receipt.events as any)[0].args.poolID;
-  console.log(`Created limit order pool ${poolID}`);
+  await createLimitOrder(params);
 }
 
 main()

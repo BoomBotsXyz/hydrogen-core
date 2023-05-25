@@ -26,8 +26,7 @@ let nucleus: HydrogenNucleus;
 let NUCLEUS_ADDRESS = "0xd2174BfC96C96608C2EC7Bd8b5919f9e3603d37f";
 
 async function main() {
-  let deployerAddress = await deployer.getAddress();
-  console.log(`Using ${deployerAddress} as deployer and owner`);
+  console.log(`Using ${deployer.address} as deployer and owner`);
 
   chainID = (await provider.getNetwork()).chainId;
   networkSettings = getNetworkSettings(chainID);
