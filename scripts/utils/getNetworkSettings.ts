@@ -1,15 +1,17 @@
 // chainlist
 // 1: ethereum
 // 5: goerli
+// 111555111: sepolia
 // 137: polygon
 // 80001: polygon mumbai
 // 1313161554: aurora
 // 1313161555: aurora testnet
+// 84531: base goerli
 // 31337: hardhat testnet
 
 // given a chainID, returns some settings to use for the network
 export function getNetworkSettings(chainID: number) {
-  const KNOWN_CHAINS = [1, 5, 111555111, 137, 80001, 1313161554, 1313161555, 31337];
+  const KNOWN_CHAINS = [1, 5, 111555111, 137, 80001, 1313161554, 1313161555, 84531, 31337];
   if(!KNOWN_CHAINS.includes(chainID)) throw new Error(`chainID '${chainID}' unknown`);
 
   // number of blocks to wait to ensure finality
@@ -21,6 +23,7 @@ export function getNetworkSettings(chainID: number) {
     [80001]: 5,
     [1313161554]: 5,
     [1313161555]: 5,
+    [84531]: 5,
     [31337]: 0
   };
   let confirmations = CONFIRMATIONS.hasOwnProperty(chainID) ? CONFIRMATIONS[chainID] : 1;
@@ -35,12 +38,13 @@ export function getNetworkSettings(chainID: number) {
     [80001]: {maxFeePerGas: 2 * ONE_GWEI + 1, maxPriorityFeePerGas: 1 * ONE_GWEI},
     [1313161554]: {},
     [1313161555]: {},
+    [84531]: {},
     [31337]: {},
   };
   let overrides = OVERRIDES.hasOwnProperty(chainID) ? OVERRIDES[chainID] : {};
 
   // testnets
-  const TESTNETS: any = [5, 111555111, 80001, 1313161555, 31337];
+  const TESTNETS: any = [5, 111555111, 80001, 1313161555, 84531, 31337];
   let isTestnet = TESTNETS.includes(chainID);
 
   // url of the provider
@@ -52,6 +56,7 @@ export function getNetworkSettings(chainID: number) {
     [80001]: process.env.MUMBAI_URL,
     [1313161554]: process.env.AURORA_URL,
     [1313161555]: process.env.AURORA_TESTNET_URL,
+    [84531]: process.env.BASE_GOERLI_URL,
     [31337]: "" // technically this does have a url when forking. but we want this to fail if not listening to prod network
   }
   let providerURL = (PROVIDER_URLS.hasOwnProperty(chainID) ? PROVIDER_URLS[chainID] : "") || "";
