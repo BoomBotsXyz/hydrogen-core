@@ -8,7 +8,7 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import chai from "chai";
 const { expect } = chai;
 
-import { HydrogenNucleus, MockERC20, MockFlashSwapCallee1, MockFlashSwapCallee2, MockFlashSwapCallee3, MockFlashSwapCallee4, MockFlashSwapCallee5, MockFlashSwapCallee6, MockFlashSwapCallee7, MockFlashSwapCallee8 } from "./../typechain-types";
+import { HydrogenNucleus, MockERC20, MockERC20NoReturnsSuccess, MockERC20NoReturnsRevert, MockERC20NoReturnsRevertWithError, MockERC20SuccessFalse, MockFlashSwapCallee1, MockFlashSwapCallee2, MockFlashSwapCallee3, MockFlashSwapCallee4, MockFlashSwapCallee5, MockFlashSwapCallee6, MockFlashSwapCallee7, MockFlashSwapCallee8 } from "./../typechain-types";
 
 import { expectDeployed } from "./../scripts/utilities/expectDeployed";
 import { getNetworkSettings } from "../scripts/utils/getNetworkSettings";
@@ -22,9 +22,9 @@ const { AddressZero, WeiPerEther, MaxUint256, Zero } = ethers.constants;
 const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
 const MAX_PPM = BN.from(1_000_000); // parts per million
 
-const LOCATION_THIS_POOL = "0x0000000000000000000000000000000000000000000000000000000000000001";
 const INVALID_LOCATION_0 = "0x0000000000000000000000000000000000000000000000000000000000000000";
-const INVALID_LOCATION_4 = "0x0400000000000000000000000000000000000000000000000000000000000000";
+const INVALID_LOCATION_6 = "0x0600000000000000000000000000000000000000000000000000000000000000";
+const INVALID_LOCATION_FLAG = "0x0400000000000000000000000000000000000000000000000000000000000000";
 const INVALID_EXTERNAL_ADDRESS_LOCATION = "0x01ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 const INVALID_INTERNAL_ADDRESS_LOCATION = "0x02ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 const NULL_LOCATION = "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -33,8 +33,7 @@ const NULL_FEE = "0x000000000000000000000000000000000000000000000000000000000000
 
 describe("HydrogenNucleus-core", function () {
   let deployer: SignerWithAddress;
-  let owner1: SignerWithAddress;
-  let owner2: SignerWithAddress;
+  let owner: SignerWithAddress;
   let user1: SignerWithAddress;
   let user2: SignerWithAddress;
   let user3: SignerWithAddress;
@@ -56,13 +55,17 @@ describe("HydrogenNucleus-core", function () {
   let token2: MockERC20;
   let token3: MockERC20;
   let tokens:any[] = [];
+  let nonstandardToken1: MockERC20NoReturnsSuccess;
+  let nonstandardToken2: MockERC20NoReturnsRevert;
+  let nonstandardToken3: MockERC20NoReturnsRevertWithError;
+  let nonstandardToken4: MockERC20SuccessFalse;
 
   let chainID: number;
   let networkSettings: any;
   let snapshot: BN;
 
   before(async function () {
-    [deployer, owner1, owner2, user1, user2, user3, user4, user5] = await ethers.getSigners();
+    [deployer, owner, user1, user2, user3, user4, user5] = await ethers.getSigners();
     chainID = (await provider.getNetwork()).chainId;
     networkSettings = getNetworkSettings(chainID);
     if(!networkSettings.isTestnet) throw new Error("Do not run tests on production networks");
@@ -74,6 +77,11 @@ describe("HydrogenNucleus-core", function () {
       tokens.push(token);
     }
     [token1, token2, token3] = tokens;
+
+    nonstandardToken1 = await deployContract(deployer, "MockERC20NoReturnsSuccess", [`NonstandardToken1`, `NSTKN1`, 18]) as MockERC20NoReturnsSuccess;
+    nonstandardToken2 = await deployContract(deployer, "MockERC20NoReturnsRevert", [`NonstandardToken2`, `NSTKN2`, 18]) as MockERC20NoReturnsRevert;
+    nonstandardToken3 = await deployContract(deployer, "MockERC20NoReturnsRevertWithError", [`NonstandardToken3`, `NSTKN3`, 18]) as MockERC20NoReturnsRevertWithError;
+    nonstandardToken4 = await deployContract(deployer, "MockERC20SuccessFalse", [`NonstandardToken4`, `NSTKN4`, 18]) as MockERC20SuccessFalse;
   });
 
   after(async function () {
@@ -82,7 +90,7 @@ describe("HydrogenNucleus-core", function () {
 
   describe("deployment", function () {
     it("should deploy successfully", async function () {
-      nucleus = await deployContract(deployer, "HydrogenNucleus", [owner1.address]) as HydrogenNucleus;
+      nucleus = await deployContract(deployer, "HydrogenNucleus", [owner.address]) as HydrogenNucleus;
     });
     it("should deploy callback contracts", async function () {
       swapCallee1 = await deployContract(deployer, "MockFlashSwapCallee1", [nucleus.address]) as MockFlashSwapCallee1;
@@ -103,8 +111,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.exists(0)).eq(false);
       expect(await nucleus.exists(1)).eq(false);
       await expect(nucleus.ownerOf(0)).to.be.reverted;
-      await expect(nucleus.tokenByIndex(0)).to.be.reverted;
-      await expect(nucleus.tokenOfOwnerByIndex(user1.address, 0)).to.be.reverted;
       await expect(nucleus.getPoolType(0)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolDoesNotExist");
       await expect(nucleus.getPoolType(1)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolDoesNotExist");
       await expect(nucleus.getLimitOrderPool(0)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolDoesNotExist");
@@ -127,35 +133,17 @@ describe("HydrogenNucleus-core", function () {
       await expect(nucleus.getTokenBalance(nucleus.address, HydrogenNucleusHelper.externalAddressToLocation(user1.address))).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("cannot fetch token balance of invalid locations", async function () {
+      await expect(nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.externalAddressToLocation(AddressZero))).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
+      await expect(nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.internalAddressToLocation(AddressZero))).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
+      await expect(nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.externalAddressToLocation(nucleus.address))).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
+      await expect(nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.internalAddressToLocation(nucleus.address))).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
       await expect(nucleus.getTokenBalance(token1.address, INVALID_LOCATION_0)).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
-      await expect(nucleus.getTokenBalance(token1.address, INVALID_LOCATION_4)).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
+      await expect(nucleus.getTokenBalance(token1.address, INVALID_LOCATION_6)).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
       await expect(nucleus.getTokenBalance(token1.address, INVALID_EXTERNAL_ADDRESS_LOCATION)).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationToAddressCast");
       await expect(nucleus.getTokenBalance(token1.address, INVALID_INTERNAL_ADDRESS_LOCATION)).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationToAddressCast");
     });
-  });
-
-  describe("ownable", function () {
-    it("initial owner should be set", async function () {
-      expect(await nucleus.owner()).eq(owner1.address);
-    });
-    it("non owner cannot transfer ownership", async function () {
-      await expect(nucleus.connect(user1).transferOwnership(user1.address)).to.be.revertedWith("Ownable: caller is not the owner");
-    });
-    it("owner can start ownership transfer transfer", async function () {
-      expect(await nucleus.pendingOwner()).eq(AddressZero);
-      let tx = await nucleus.connect(owner1).transferOwnership(owner2.address);
-      expect(await nucleus.owner()).eq(owner1.address);
-      expect(await nucleus.pendingOwner()).eq(owner2.address);
-      await expect(tx).to.emit(nucleus, "OwnershipTransferStarted").withArgs(owner1.address, owner2.address);
-    });
-    it("non owner cannot accept ownership", async function () {
-      await expect(nucleus.connect(user1).acceptOwnership()).to.be.revertedWith("Ownable2Step: caller is not the new owner");
-    });
-    it("new owner can accept ownership", async function () {
-      let tx = await nucleus.connect(owner2).acceptOwnership();
-      expect(await nucleus.owner()).eq(owner2.address);
-      expect(await nucleus.pendingOwner()).eq(AddressZero);
-      await expect(tx).to.emit(nucleus, "OwnershipTransferred").withArgs(owner1.address, owner2.address);
+    it("should not be reenterred", async function() {
+      expect(await nucleus.reentrancyGuardState()).eq(1);
     });
   });
 
@@ -203,9 +191,8 @@ describe("HydrogenNucleus-core", function () {
       await token1.connect(user1).approve(nucleus.address, MaxUint256);
       let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
       let dst = src;
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
-      let balNu1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu1 = await token1.balanceOf(nucleus.address);
       let amount = WeiPerEther.mul(2);
       let tx = await nucleus.connect(user1).tokenTransfer({
         token: token1.address,
@@ -214,22 +201,21 @@ describe("HydrogenNucleus-core", function () {
         dst: dst
       });
       let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
-      let balNu2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu2 = await token1.balanceOf(nucleus.address);
       expect(balSrc1.sub(balSrc2)).eq(0);
       expect(balNu1.sub(balNu2)).eq(0);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, src, amount);
       await expect(tx).to.not.emit(token1, "Transfer");
-      expect(await nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.internalAddressToLocation(nucleus.address))).to.eq(0);
+      expect(await token1.balanceOf(nucleus.address)).to.eq(0);
       expect(await nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.internalAddressToLocation(user1.address))).to.eq(0);
       expect(await nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.internalAddressToLocation(user2.address))).to.eq(0);
     });
     it("can transfer from external address to external address", async function () {
       let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
       let dst = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
       let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu1 = await token1.balanceOf(nucleus.address);
       let amount = WeiPerEther.mul(4);
       let tx = await nucleus.connect(user1).tokenTransfer({
         token: token1.address,
@@ -239,7 +225,7 @@ describe("HydrogenNucleus-core", function () {
       });
       let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
       let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu2 = await token1.balanceOf(nucleus.address);
       expect(balSrc1.sub(balSrc2)).eq(amount);
       expect(balDst2.sub(balDst1)).eq(amount);
       expect(balNu1.sub(balNu2)).eq(0);
@@ -252,10 +238,9 @@ describe("HydrogenNucleus-core", function () {
     it("can transfer from external address to internal address", async function () {
       let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
       let dst = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
       let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu1 = await token1.balanceOf(nucleus.address);
       let amount = WeiPerEther.mul(8);
       let tx = await nucleus.connect(user1).tokenTransfer({
         token: token1.address,
@@ -265,7 +250,7 @@ describe("HydrogenNucleus-core", function () {
       });
       let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
       let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu2 = await token1.balanceOf(nucleus.address);
       expect(balSrc1.sub(balSrc2)).eq(amount);
       expect(balDst2.sub(balDst1)).eq(amount);
       expect(balNu2.sub(balNu1)).eq(amount);
@@ -280,10 +265,9 @@ describe("HydrogenNucleus-core", function () {
       // these tokens may be locked forever, similar to raw erc20 transfer
       let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
       let dst = HydrogenNucleusHelper.poolIDtoLocation(1);
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
       let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu1 = await token1.balanceOf(nucleus.address);
       let amount = WeiPerEther.mul(16);
       let tx = await nucleus.connect(user1).tokenTransfer({
         token: token1.address,
@@ -293,7 +277,7 @@ describe("HydrogenNucleus-core", function () {
       });
       let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
       let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu2 = await token1.balanceOf(nucleus.address);
       expect(balSrc1.sub(balSrc2)).eq(amount);
       expect(balDst2.sub(balDst1)).eq(amount);
       expect(balNu2.sub(balNu1)).eq(amount);
@@ -342,9 +326,8 @@ describe("HydrogenNucleus-core", function () {
     it("can transfer from internal address to self", async function () {
       let src = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
       let dst = src;
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
-      let balNu1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu1 = await token1.balanceOf(nucleus.address);
       let amount = WeiPerEther.mul(32);
       let tx = await nucleus.connect(user2).tokenTransfer({
         token: token1.address,
@@ -353,7 +336,7 @@ describe("HydrogenNucleus-core", function () {
         dst: dst
       });
       let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
-      let balNu2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu2 = await token1.balanceOf(nucleus.address);
       expect(balSrc1.sub(balSrc2)).eq(0);
       expect(balNu2.sub(balNu1)).eq(0);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
@@ -362,10 +345,9 @@ describe("HydrogenNucleus-core", function () {
     it("can transfer from internal address to external address", async function () {
       let src = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
       let dst = HydrogenNucleusHelper.externalAddressToLocation(user3.address);
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
       let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu1 = await token1.balanceOf(nucleus.address);
       let amount = WeiPerEther.mul(64);
       let tx = await nucleus.connect(user2).tokenTransfer({
         token: token1.address,
@@ -375,7 +357,7 @@ describe("HydrogenNucleus-core", function () {
       });
       let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
       let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu2 = await token1.balanceOf(nucleus.address);
       expect(balSrc1.sub(balSrc2)).eq(amount);
       expect(balDst2.sub(balDst1)).eq(amount);
       expect(balNu1.sub(balNu2)).eq(amount);
@@ -385,10 +367,9 @@ describe("HydrogenNucleus-core", function () {
     it("can transfer from internal address to internal address", async function () {
       let src = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
       let dst = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
       let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu1 = await token1.balanceOf(nucleus.address);
       let amount = WeiPerEther.mul(128);
       let tx = await nucleus.connect(user2).tokenTransfer({
         token: token1.address,
@@ -398,7 +379,7 @@ describe("HydrogenNucleus-core", function () {
       });
       let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
       let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu2 = await token1.balanceOf(nucleus.address);
       expect(balSrc1.sub(balSrc2)).eq(amount);
       expect(balDst2.sub(balDst1)).eq(amount);
       expect(balNu2.sub(balNu1)).eq(0);
@@ -411,10 +392,9 @@ describe("HydrogenNucleus-core", function () {
       // these tokens may be locked forever, similar to raw erc20 transfer
       let src = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
       let dst = HydrogenNucleusHelper.poolIDtoLocation(1);
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
       let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu1 = await token1.balanceOf(nucleus.address);
       let amount = WeiPerEther.mul(256);
       let tx = await nucleus.connect(user2).tokenTransfer({
         token: token1.address,
@@ -424,7 +404,7 @@ describe("HydrogenNucleus-core", function () {
       });
       let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
       let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNu2 = await token1.balanceOf(nucleus.address);
       expect(balSrc1.sub(balSrc2)).eq(amount);
       expect(balDst2.sub(balDst1)).eq(amount);
       expect(balNu1.sub(balNu2)).eq(0);
@@ -475,7 +455,7 @@ describe("HydrogenNucleus-core", function () {
       await expect(nucleus.connect(user1).tokenTransfer({
         token: token1.address,
         amount: 1,
-        src: INVALID_LOCATION_4,
+        src: INVALID_LOCATION_6,
         dst: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
       })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
     });
@@ -484,18 +464,18 @@ describe("HydrogenNucleus-core", function () {
         token: token1.address,
         amount: 1,
         src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
-        dst: INVALID_LOCATION_4
+        dst: INVALID_LOCATION_6
       })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
     });
     it("cannot transfer between invalid location types", async function () {
       await expect(nucleus.connect(user1).tokenTransfer({
         token: token1.address,
         amount: 1,
-        src: INVALID_LOCATION_4,
-        dst: INVALID_LOCATION_4
+        src: INVALID_LOCATION_6,
+        dst: INVALID_LOCATION_6
       })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
     });
-    it("cannot transfer not contract", async function () {
+    it("cannot transfer not contract 1", async function () {
       await expect(nucleus.connect(user1).tokenTransfer({
         token: user1.address,
         amount: 0,
@@ -503,13 +483,127 @@ describe("HydrogenNucleus-core", function () {
         dst: HydrogenNucleusHelper.externalAddressToLocation(user1.address)
       })).to.be.reverted;
     });
-    it("cannot transfer not erc20", async function () {
+    /* // no external call, but only works with zero amount
+    it("cannot transfer not contract 2", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: user1.address,
+        amount: 0,
+        src: HydrogenNucleusHelper.internalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.internalAddressToLocation(user1.address)
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenERC20TransferFailed");
+    });
+    */
+    it("cannot transfer not contract 3", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: user1.address,
+        amount: 0,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.internalAddressToLocation(user1.address)
+      })).to.be.reverted;
+    });
+    it("cannot transfer not contract 4", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: user1.address,
+        amount: 0,
+        src: HydrogenNucleusHelper.internalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.externalAddressToLocation(user1.address)
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenERC20TransferFailed");
+    });
+    it("cannot transfer not contract 5", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: user1.address,
+        amount: 0,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.externalAddressToLocation(user2.address)
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenERC20TransferFailed");
+    });
+    it("cannot transfer not erc20 1", async function () {
       await expect(nucleus.connect(user1).tokenTransfer({
         token: swapCallee1.address,
         amount: 0,
         src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
         dst: HydrogenNucleusHelper.externalAddressToLocation(user1.address)
       })).to.be.reverted;
+    });
+    /* // no external call, but only works with zero amount
+    it("cannot transfer not erc20 2", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: swapCallee1.address,
+        amount: 0,
+        src: HydrogenNucleusHelper.internalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.internalAddressToLocation(user1.address)
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenERC20TransferFailed");
+    });
+    */
+    it("cannot transfer not erc20 3", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: swapCallee1.address,
+        amount: 0,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.internalAddressToLocation(user1.address)
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenERC20TransferFailed");
+    });
+    it("cannot transfer not erc20 4", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: swapCallee1.address,
+        amount: 0,
+        src: HydrogenNucleusHelper.internalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.externalAddressToLocation(user1.address)
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenERC20TransferFailed");
+    });
+    it("can transfer nonstandard token 1", async function () {
+      await nonstandardToken1.mint(user1.address, WeiPerEther.mul(10));
+      await nonstandardToken1.connect(user1).approve(nucleus.address, MaxUint256);
+      let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let dst = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
+      let balSrc1 = await nucleus.getTokenBalance(nonstandardToken1.address, src);
+      let balDst1 = await nucleus.getTokenBalance(nonstandardToken1.address, dst);
+      let balNu1 = await nonstandardToken1.balanceOf(nucleus.address);
+      let amount = WeiPerEther.mul(8);
+      let tx = await nucleus.connect(user1).tokenTransfer({
+        token: nonstandardToken1.address,
+        amount: amount,
+        src: src,
+        dst: dst
+      });
+      let balSrc2 = await nucleus.getTokenBalance(nonstandardToken1.address, src);
+      let balDst2 = await nucleus.getTokenBalance(nonstandardToken1.address, dst);
+      let balNu2 = await nonstandardToken1.balanceOf(nucleus.address);
+      expect(balSrc1.sub(balSrc2)).eq(amount);
+      expect(balDst2.sub(balDst1)).eq(amount);
+      expect(balNu2.sub(balNu1)).eq(amount);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(nonstandardToken1.address, src, dst, amount);
+      await expect(tx).to.emit(nonstandardToken1, "Transfer").withArgs(user1.address, nucleus.address, amount);
+    });
+    it("cannot transfer nonstandard token 2", async function () {
+      await nonstandardToken2.mint(user1.address, WeiPerEther);
+      await nonstandardToken2.connect(user1).approve(nucleus.address, MaxUint256);
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: nonstandardToken2.address,
+        amount: 1,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.internalAddressToLocation(user1.address)
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenERC20TransferFailed");
+    });
+    it("cannot transfer nonstandard token 3", async function () {
+      await nonstandardToken3.mint(user1.address, WeiPerEther);
+      await nonstandardToken3.connect(user1).approve(nucleus.address, MaxUint256);
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: nonstandardToken3.address,
+        amount: 1,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.internalAddressToLocation(user1.address)
+      })).to.be.revertedWith("MockERC20NoReturnsRevertWithError: revert");
+    });
+    it("cannot transfer nonstandard token 4", async function () {
+      await nonstandardToken4.mint(user1.address, WeiPerEther);
+      await nonstandardToken4.connect(user1).approve(nucleus.address, MaxUint256);
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: nonstandardToken4.address,
+        amount: 1,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.internalAddressToLocation(user1.address)
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenERC20TransferFailed");
     });
     it("cannot transfer nucleus as erc20", async function () {
       await expect(nucleus.connect(user1).tokenTransfer({
@@ -536,115 +630,36 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("can transfer from external address to nucleus external address", async function () {
-      // not a common use case
-      // only allowed to prevent future revert
-      // these tokens will be locked forever, similar to raw erc20 transfer
-      let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
-      let dst = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
-      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
-      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu1 = await token1.balanceOf(nucleus.address);
-      let amount = WeiPerEther.mul(512);
-      let tx = await nucleus.connect(user1).tokenTransfer({
+      await expect(nucleus.connect(user1).tokenTransfer({
         token: token1.address,
-        amount: amount,
-        src: src,
-        dst: dst
-      });
-      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
-      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu2 = await token1.balanceOf(nucleus.address);
-      expect(balSrc1.sub(balSrc2)).eq(amount);
-      expect(balDst2.sub(balDst1)).eq(amount);
-      expect(balNu2.sub(balNu1)).eq(amount);
-      await expect(tx).to.emit(token1, "Transfer").withArgs(user1.address, nucleus.address, amount);
-      await expect(tx).to.emit(token1, "Transfer").withArgs(nucleus.address, nucleus.address, amount);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
+        amount: 0,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.externalAddressToLocation(nucleus.address),
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("cannot transfer from external address to nucleus internal address", async function () {
-      // not a common use case
-      // only allowed to prevent future revert
-      // these tokens will be locked forever, similar to raw erc20 transfer
-      let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
-      let dst = HydrogenNucleusHelper.internalAddressToLocation(nucleus.address);
-      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
-      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu1 = await token1.balanceOf(nucleus.address);
-      let amount = WeiPerEther.mul(1024);
-      let tx = await nucleus.connect(user1).tokenTransfer({
+      await expect(nucleus.connect(user1).tokenTransfer({
         token: token1.address,
-        amount: amount,
-        src: src,
-        dst: dst
-      });
-      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
-      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu2 = await token1.balanceOf(nucleus.address);
-      expect(balSrc1.sub(balSrc2)).eq(amount);
-      expect(balDst2.sub(balDst1)).eq(amount);
-      expect(balNu2.sub(balNu1)).eq(amount);
-      await expect(tx).to.emit(token1, "Transfer").withArgs(user1.address, nucleus.address, amount);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
+        amount: 0,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.internalAddressToLocation(nucleus.address),
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("can transfer from internal address to nucleus external address", async function () {
-      // not a common use case
-      // only allowed to prevent future revert
-      // these tokens will be locked forever, similar to raw erc20 transfer
-      let src = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
-      let dst = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
-      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
-      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu1 = await token1.balanceOf(nucleus.address);
-      let amount = WeiPerEther.mul(2048);
-      let tx = await nucleus.connect(user2).tokenTransfer({
+      await expect(nucleus.connect(user1).tokenTransfer({
         token: token1.address,
-        amount: amount,
-        src: src,
-        dst: dst
-      });
-      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
-      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu2 = await token1.balanceOf(nucleus.address);
-      expect(balSrc1.sub(balSrc2)).eq(amount);
-      expect(balDst2.sub(balDst1)).eq(0);
-      expect(balNu2.sub(balNu1)).eq(0);
-      await expect(tx).to.emit(token1, "Transfer").withArgs(nucleus.address, nucleus.address, amount);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
+        amount: 0,
+        src: HydrogenNucleusHelper.internalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.externalAddressToLocation(nucleus.address),
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("cannot transfer from internal address to nucleus internal address", async function () {
-      // not a common use case
-      // only allowed to prevent future revert
-      // these tokens will be locked forever, similar to raw erc20 transfer
-      let src = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
-      let dst = HydrogenNucleusHelper.internalAddressToLocation(nucleus.address);
-      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
-      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu1 = await token1.balanceOf(nucleus.address);
-      let amount = WeiPerEther.mul(4096);
-      let tx = await nucleus.connect(user2).tokenTransfer({
+      await expect(nucleus.connect(user1).tokenTransfer({
         token: token1.address,
-        amount: amount,
-        src: src,
-        dst: dst
-      });
-      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
-      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
-      let balNu2 = await token1.balanceOf(nucleus.address);
-      expect(balSrc1.sub(balSrc2)).eq(amount);
-      expect(balDst2.sub(balDst1)).eq(amount);
-      expect(balNu2.sub(balNu1)).eq(0);
-      await expect(tx).to.not.emit(token1, "Transfer");
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
-    });
-    it("balance lookups are equivalent", async function () {
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
-      let bal11 = await token1.balanceOf(nucleus.address);
-      let bal12 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      expect(bal11).gt(0);
-      expect(bal11).eq(bal12);
-      let bal21 = await token2.balanceOf(nucleus.address);
-      let bal22 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
-      expect(bal21).eq(bal22);
+        amount: 0,
+        src: HydrogenNucleusHelper.internalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.internalAddressToLocation(nucleus.address),
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("can transfer multiple times using multicall", async function () {
       let src = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
@@ -690,6 +705,21 @@ describe("HydrogenNucleus-core", function () {
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst2, amount2);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst3, amount3);
     });
+    it("can get balance of flag location address types", async function () {
+      for(const user of [owner, user1, user2, user3]) {
+        let balE1 = await token1.balanceOf(user.address);
+        let balE2 = await nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.externalAddressToLocation(user.address));
+        let balE3 = await nucleus.connect(user).getTokenBalance(token1.address, HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS);
+        expect(balE1).eq(balE2);
+        expect(balE2).eq(balE3);
+        let balI2 = await nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.internalAddressToLocation(user.address));
+        let balI3 = await nucleus.connect(user).getTokenBalance(token1.address, HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS);
+        expect(balI2).eq(balI3);
+      }
+    });
+    it("cannot get balance of flag location pool types", async function () {
+      await expect(nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.LOCATION_FLAG_POOL)).to.be.revertedWithCustomError(nucleus, "HydrogenMissingPoolContext");
+    });
   });
 
   describe("createLimitOrderPool", function () {
@@ -705,7 +735,7 @@ describe("HydrogenNucleus-core", function () {
         locationA: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
         locationB: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
         hptReceiver: user1.address
-      })).to.be.revertedWith("Address: call to non-contract");
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenERC20TransferFailed");
     });
     it("cannot create limit order using not token as erc20", async function () {
       await expect(nucleus.connect(user1).createLimitOrderPool({
@@ -716,7 +746,7 @@ describe("HydrogenNucleus-core", function () {
         locationA: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
         locationB: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
         hptReceiver: user1.address
-      })).to.be.revertedWith("SafeERC20: low-level call failed");
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenERC20TransferFailed");
     });
     it("cannot create limit order using nucleus as erc20", async function () {
       await expect(nucleus.connect(user1).createLimitOrderPool({
@@ -814,7 +844,7 @@ describe("HydrogenNucleus-core", function () {
         tokenB: token2.address,
         amountA: 1,
         exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1, 1),
-        locationA: INVALID_LOCATION_4,
+        locationA: INVALID_LOCATION_6,
         locationB: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
         hptReceiver: user1.address
       })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
@@ -826,7 +856,7 @@ describe("HydrogenNucleus-core", function () {
         amountA: 1,
         exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1, 1),
         locationA: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
-        locationB: INVALID_LOCATION_4,
+        locationB: INVALID_LOCATION_6,
         hptReceiver: user1.address
       })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
     });
@@ -900,7 +930,7 @@ describe("HydrogenNucleus-core", function () {
       // set totalSupply incredibly high to force revert
       let ts1 = await nucleus.totalSupply();
       // set
-      let slotIndex = toBytes32(8);
+      let slotIndex = toBytes32(0);
       let desiredLength = toBytes32(BN.from(2).pow(248).div(1000));
       await setStorageAt(nucleus.address, slotIndex, desiredLength);
       let ts2 = await nucleus.totalSupply();
@@ -932,8 +962,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user1.address)).eq(0);
       expect(await nucleus.exists(poolID)).eq(false);
       await expect(nucleus.ownerOf(poolID)).to.be.reverted;
-      await expect(nucleus.tokenByIndex(0)).to.be.reverted;
-      await expect(nucleus.tokenOfOwnerByIndex(user1.address, 0)).to.be.reverted;
       await expect(nucleus.getPoolType(poolID)).to.be.reverted;
       await expect(nucleus.getLimitOrderPool(poolID)).to.be.reverted;
       await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
@@ -956,8 +984,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user1.address)).eq(1);
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user1.address);
-      expect(await nucleus.tokenByIndex(0)).eq(poolID);
-      expect(await nucleus.tokenOfOwnerByIndex(user1.address, 0)).eq(poolID);
       expect(await nucleus.getPoolType(poolID)).eq(1);
       let pool = await nucleus.getLimitOrderPool(poolID);
       expect(pool.tokenA).eq(token1.address);
@@ -994,8 +1020,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user1.address)).eq(1);
       expect(await nucleus.exists(poolID)).eq(false);
       await expect(nucleus.ownerOf(poolID)).to.be.reverted;
-      await expect(nucleus.tokenByIndex(1)).to.be.reverted;
-      await expect(nucleus.tokenOfOwnerByIndex(user1.address, 1)).to.be.reverted;
       await expect(nucleus.getPoolType(poolID)).to.be.reverted;
       await expect(nucleus.getLimitOrderPool(poolID)).to.be.reverted;
       await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted
@@ -1018,8 +1042,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user1.address)).eq(2);
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user1.address);
-      expect(await nucleus.tokenByIndex(1)).eq(poolID);
-      expect(await nucleus.tokenOfOwnerByIndex(user1.address, 1)).eq(poolID);
       expect(await nucleus.getPoolType(poolID)).eq(1);
       let pool = await nucleus.getLimitOrderPool(poolID);
       expect(pool.tokenA).eq(token1.address);
@@ -1045,6 +1067,7 @@ describe("HydrogenNucleus-core", function () {
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, params.tokenA, params.tokenB, params.exchangeRate, params.locationB);
     });
     it("can create limit order 3", async function () {
+      expect(await nucleus.reentrancyGuardState()).eq(1);
       // from internal address to external address
       let poolID = 3001;
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
@@ -1056,8 +1079,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user2.address)).eq(0);
       expect(await nucleus.exists(poolID)).eq(false);
       await expect(nucleus.ownerOf(poolID)).to.be.reverted;
-      await expect(nucleus.tokenByIndex(2)).to.be.reverted;
-      await expect(nucleus.tokenOfOwnerByIndex(user2.address, 0)).to.be.reverted;
       await expect(nucleus.getPoolType(poolID)).to.be.reverted;
       await expect(nucleus.getLimitOrderPool(poolID)).to.be.reverted;
       await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted
@@ -1081,8 +1102,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user2.address)).eq(1);
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user2.address);
-      expect(await nucleus.tokenByIndex(2)).eq(poolID);
-      expect(await nucleus.tokenOfOwnerByIndex(user2.address, 0)).eq(poolID);
       expect(await nucleus.getPoolType(poolID)).eq(1);
       let pool = await nucleus.getLimitOrderPool(poolID);
       expect(pool.tokenA).eq(token1.address);
@@ -1110,6 +1129,7 @@ describe("HydrogenNucleus-core", function () {
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, params.tokenA, params.tokenB, params.exchangeRate, params.locationB);
     });
     it("can create limit order 4", async function () {
+      expect(await nucleus.reentrancyGuardState()).eq(1);
       // from other pool to another pool
       // mint hpt to other user
       let fromPoolID = 3001;
@@ -1127,8 +1147,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user3.address)).eq(0);
       expect(await nucleus.exists(newPoolID)).eq(false);
       await expect(nucleus.ownerOf(newPoolID)).to.be.reverted;
-      await expect(nucleus.tokenByIndex(3)).to.be.reverted;
-      await expect(nucleus.tokenOfOwnerByIndex(user3.address, 0)).to.be.reverted;
       await expect(nucleus.getPoolType(newPoolID)).to.be.reverted;
       await expect(nucleus.getLimitOrderPool(newPoolID)).to.be.reverted;
       await expect(nucleus.getTradeRequest(newPoolID, token1.address, token2.address)).to.be.reverted
@@ -1155,8 +1173,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user3.address)).eq(1);
       expect(await nucleus.exists(newPoolID)).eq(true);
       expect(await nucleus.ownerOf(newPoolID)).eq(user3.address);
-      expect(await nucleus.tokenByIndex(3)).eq(newPoolID);
-      expect(await nucleus.tokenOfOwnerByIndex(user3.address, 0)).eq(newPoolID);
       expect(await nucleus.getPoolType(newPoolID)).eq(1);
       let pool = await nucleus.getLimitOrderPool(newPoolID);
       expect(pool.tokenA).eq(token1.address);
@@ -1194,13 +1210,11 @@ describe("HydrogenNucleus-core", function () {
       let amountA = WeiPerEther;
       let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(103, 100);
       let locationA = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
-      let locationB = LOCATION_THIS_POOL;
+      let locationB = HydrogenNucleusHelper.LOCATION_FLAG_POOL;
       expect(await nucleus.totalSupply()).eq(4);
       expect(await nucleus.balanceOf(user2.address)).eq(1);
       expect(await nucleus.exists(poolID)).eq(false);
       await expect(nucleus.ownerOf(poolID)).to.be.reverted;
-      await expect(nucleus.tokenByIndex(4)).to.be.reverted;
-      await expect(nucleus.tokenOfOwnerByIndex(user2.address, 1)).to.be.reverted;
       await expect(nucleus.getPoolType(poolID)).to.be.reverted;
       await expect(nucleus.getLimitOrderPool(poolID)).to.be.reverted;
       await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted
@@ -1224,8 +1238,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user2.address)).eq(2);
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user2.address);
-      expect(await nucleus.tokenByIndex(4)).eq(poolID);
-      expect(await nucleus.tokenOfOwnerByIndex(user2.address, 1)).eq(poolID);
       expect(await nucleus.getPoolType(poolID)).eq(1);
       let pool = await nucleus.getLimitOrderPool(poolID);
       expect(pool.tokenA).eq(token1.address);
@@ -1261,7 +1273,7 @@ describe("HydrogenNucleus-core", function () {
         locationA: HydrogenNucleusHelper.poolIDtoLocation(3001),
         locationB: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
         hptReceiver: user1.address
-      })).to.be.revertedWithCustomError(nucleus, "HydrogenTransferFromPoolNotOwnedByMsgSender");
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenNotPoolOwner");
     });
     it("cannot create limit order using funds from pool with insufficient balance", async function () {
       let fromPoolLocation = HydrogenNucleusHelper.poolIDtoLocation(1001);
@@ -1328,7 +1340,7 @@ describe("HydrogenNucleus-core", function () {
         amount: 1,
         src: HydrogenNucleusHelper.poolIDtoLocation(1001),
         dst: HydrogenNucleusHelper.externalAddressToLocation(user2.address)
-      })).to.be.revertedWithCustomError(nucleus, "HydrogenTransferFromPoolNotOwnedByMsgSender");
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenNotPoolOwner");
     });
     it("cannot transfer from pool to self with insufficient balance", async function () {
       await expect(nucleus.connect(user1).tokenTransfer({
@@ -1356,7 +1368,7 @@ describe("HydrogenNucleus-core", function () {
       expect(balSrc1).gte(amount);
       expect(balSrc1).eq(balDst1);
       let balNu1 = await token1.balanceOf(nucleus.address);
-      let balNu11 = await nucleus.getTokenBalance(token1.address, HydrogenNucleusHelper.externalAddressToLocation(nucleus.address));
+      let balNu11 = await token1.balanceOf(nucleus.address);
       expect(balNu1).eq(balNu11);
       let tx = await nucleus.connect(user1).tokenTransfer({
         token: token1.address,
@@ -1566,6 +1578,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeTheseTokens");
     });
     it("cannot swap if pool has invalid exchange rate", async function () {
+      expect(await nucleus.reentrancyGuardState()).eq(1);
       let swapParams = {
         poolID: 3001,
         tokenA: token1.address,
@@ -1588,6 +1601,7 @@ describe("HydrogenNucleus-core", function () {
       updateParams.exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(0, 1);
       await nucleus.connect(user2).updateLimitOrderPool(updateParams);
       await expect(nucleus.connect(user1).executeMarketOrder(swapParams)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeTheseTokens");
+      expect(await nucleus.reentrancyGuardState()).eq(1);
     });
     it("cannot swap using funds from external address that isn't msg.sender", async function () {
       await expect(nucleus.connect(user1).executeMarketOrder({
@@ -1744,7 +1758,7 @@ describe("HydrogenNucleus-core", function () {
         amountA: 1,
         amountB: 1,
         locationA: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
-        locationB: INVALID_LOCATION_4,
+        locationB: INVALID_LOCATION_6,
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
@@ -1756,7 +1770,7 @@ describe("HydrogenNucleus-core", function () {
         tokenB: token2.address,
         amountA: 1,
         amountB: 1,
-        locationA: INVALID_LOCATION_4,
+        locationA: INVALID_LOCATION_6,
         locationB: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
         flashSwapCallee: AddressZero,
         callbackData: "0x"
@@ -1854,14 +1868,13 @@ describe("HydrogenNucleus-core", function () {
     it("can swap 1", async function () {
       // from and to external address
       await token2.connect(user2).approve(nucleus.address, MaxUint256);
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let poolID = 1001;
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
       let pool = await nucleus.getLimitOrderPool(poolID);
       let mtLocationA = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
       let mtLocationB = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
-      let balNuA1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      let balNuB1 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
+      let balNuA1 = await token1.balanceOf(nucleus.address);
+      let balNuB1 = await token2.balanceOf(nucleus.address);
       let balPlA1 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB1 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA1 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -1886,8 +1899,8 @@ describe("HydrogenNucleus-core", function () {
         callbackData: "0x"
       };
       let tx = await nucleus.connect(user2).executeMarketOrder(params);
-      let balNuA2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      let balNuB2 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
+      let balNuA2 = await token1.balanceOf(nucleus.address);
+      let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB2 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -1915,7 +1928,7 @@ describe("HydrogenNucleus-core", function () {
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, poolLocation, mtLocationA, amountA);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token2.address, mtLocationB, poolLocation, amountB);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token2.address, poolLocation, pool.locationB, amountB);
-      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, token2.address, amountA, amountA, amountB);
+      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, token2.address, amountA, amountB, amountB);
     });
     it("can swap 2", async function () {
       // same pool. trade to capacity
@@ -1931,14 +1944,13 @@ describe("HydrogenNucleus-core", function () {
         dst: HydrogenNucleusHelper.internalAddressToLocation(user2.address)
       });
       // test
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let poolID = 1001;
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
       let pool = await nucleus.getLimitOrderPool(poolID);
       let mtLocationA = HydrogenNucleusHelper.internalAddressToLocation(user3.address);
       let mtLocationB = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
-      let balNuA1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      let balNuB1 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
+      let balNuA1 = await token1.balanceOf(nucleus.address);
+      let balNuB1 = await token2.balanceOf(nucleus.address);
       let balPlA1 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB1 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA1 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -1963,8 +1975,8 @@ describe("HydrogenNucleus-core", function () {
         callbackData: "0x"
       };
       let tx = await nucleus.connect(user2).executeMarketOrder(params);
-      let balNuA2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      let balNuB2 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
+      let balNuA2 = await token1.balanceOf(nucleus.address);
+      let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB2 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -1992,14 +2004,13 @@ describe("HydrogenNucleus-core", function () {
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, poolLocation, mtLocationA, amountA);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token2.address, mtLocationB, poolLocation, amountB);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token2.address, poolLocation, pool.locationB, amountB);
-      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, token2.address, amountA, amountA, amountB);
+      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, token2.address, amountA, amountB, amountB);
     });
     it("can swap 3", async function () {
       // user1 has an open limit order to sell token1 for token2 at 1.6 token1/token2
       // user2 has an open limit order to buy token1 for token2 at 1.8 token1/token2
       // user1 pulls token1 from his pool, market buys in user2's pool, and sends the funds to his other pool
       // careful each pool's tokenA and tokenB are different
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let srcPoolID = 2001;
       let srcPoolLocation = HydrogenNucleusHelper.poolIDtoLocation(srcPoolID);
       let swapPoolID = 8001;
@@ -2009,8 +2020,8 @@ describe("HydrogenNucleus-core", function () {
       let swapPool = await nucleus.getLimitOrderPool(swapPoolID);
       let mtLocationA = dstPoolLocation;
       let mtLocationB = srcPoolLocation;
-      let balNuA1 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
-      let balNuB1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNuA1 = await token2.balanceOf(nucleus.address);
+      let balNuB1 = await token1.balanceOf(nucleus.address);
       let balPlA1 = await nucleus.getTokenBalance(token2.address, swapPoolLocation);
       let balPlB1 = await nucleus.getTokenBalance(token1.address, swapPoolLocation);
       let balMtA1 = await nucleus.getTokenBalance(token2.address, mtLocationA);
@@ -2035,8 +2046,8 @@ describe("HydrogenNucleus-core", function () {
         callbackData: "0x"
       };
       let tx = await nucleus.connect(user1).executeMarketOrder(params);
-      let balNuA2 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
-      let balNuB2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
+      let balNuA2 = await token2.balanceOf(nucleus.address);
+      let balNuB2 = await token1.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token2.address, swapPoolLocation);
       let balPlB2 = await nucleus.getTokenBalance(token1.address, swapPoolLocation);
       let balMtA2 = await nucleus.getTokenBalance(token2.address, mtLocationA);
@@ -2215,7 +2226,7 @@ describe("HydrogenNucleus-core", function () {
         locationB: HydrogenNucleusHelper.poolIDtoLocation(10001),
         flashSwapCallee: swapCallee4.address,
         callbackData: "0x"
-      })).to.be.revertedWithCustomError(nucleus, "HydrogenTransferFromPoolNotOwnedByMsgSender");
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenNotPoolOwner");
     });
     it("locationB address must be initiator not callee", async function () {
       let poolID = 4001;
@@ -2300,7 +2311,7 @@ describe("HydrogenNucleus-core", function () {
         locationB: HydrogenNucleusHelper.poolIDtoLocation(buyPoolID),
         flashSwapCallee: swapCallee5.address,
         callbackData: toBytes32(buyPoolID)
-      })).to.be.revertedWithCustomError(nucleus, "HydrogenTransferFromPoolNotOwnedByMsgSender");
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenNotPoolOwner");
     });
     it("cannot use callback to sell hpt locationB", async function () {
       // user2 wants to trade token1 for token3 in poolID 10001
@@ -2320,7 +2331,7 @@ describe("HydrogenNucleus-core", function () {
         locationB: HydrogenNucleusHelper.poolIDtoLocation(sellPoolID),
         flashSwapCallee: swapCallee6.address,
         callbackData: toBytes32(sellPoolID)
-      })).to.be.revertedWithCustomError(nucleus, "HydrogenTransferFromPoolNotOwnedByMsgSender");
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenNotPoolOwner");
     });
     it("can combine multiple swaps with multicall", async function () {
       // swap tkn2 to tkn1 in pools 5001, 6001, and 7001 in parallel
@@ -2333,7 +2344,6 @@ describe("HydrogenNucleus-core", function () {
       // test
       let userLocExt = HydrogenNucleusHelper.externalAddressToLocation(user5.address);
       let userLoc = HydrogenNucleusHelper.internalAddressToLocation(user5.address);
-      let nucLoc = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let poolID5 = 5001;
       let poolID6 = 6001;
       let poolID7 = 7001;
@@ -2352,9 +2362,9 @@ describe("HydrogenNucleus-core", function () {
       let balU11 = await nucleus.getTokenBalance(token1.address, userLoc);
       let balU21 = await nucleus.getTokenBalance(token2.address, userLoc);
       let balU31 = await nucleus.getTokenBalance(token3.address, userLoc);
-      let balN11 = await nucleus.getTokenBalance(token1.address, nucLoc);
-      let balN21 = await nucleus.getTokenBalance(token2.address, nucLoc);
-      let balN31 = await nucleus.getTokenBalance(token3.address, nucLoc);
+      let balN11 = await token1.balanceOf(nucleus.address);
+      let balN21 = await token2.balanceOf(nucleus.address);
+      let balN31 = await token3.balanceOf(nucleus.address);
       let balPl511 = await nucleus.getTokenBalance(token1.address, poolLoc5);
       let balPl521 = await nucleus.getTokenBalance(token2.address, poolLoc5);
       let balPl611 = await nucleus.getTokenBalance(token1.address, poolLoc6);
@@ -2441,9 +2451,9 @@ describe("HydrogenNucleus-core", function () {
       let balU12 = await nucleus.getTokenBalance(token1.address, userLoc);
       let balU22 = await nucleus.getTokenBalance(token2.address, userLoc);
       let balU32 = await nucleus.getTokenBalance(token3.address, userLoc);
-      let balN12 = await nucleus.getTokenBalance(token1.address, nucLoc);
-      let balN22 = await nucleus.getTokenBalance(token2.address, nucLoc);
-      let balN32 = await nucleus.getTokenBalance(token3.address, nucLoc);
+      let balN12 = await token1.balanceOf(nucleus.address);
+      let balN22 = await token2.balanceOf(nucleus.address);
+      let balN32 = await token3.balanceOf(nucleus.address);
       let balPl512 = await nucleus.getTokenBalance(token1.address, poolLoc5);
       let balPl522 = await nucleus.getTokenBalance(token2.address, poolLoc5);
       let balPl612 = await nucleus.getTokenBalance(token1.address, poolLoc6);
@@ -2504,13 +2514,13 @@ describe("HydrogenNucleus-core", function () {
         poolID: 3001,
         exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(0, 0),
         locationB: HydrogenNucleusHelper.externalAddressToLocation(user1.address)
-      })).to.be.revertedWithCustomError(nucleus, "HydrogenUpdatePoolNotOwnedByMsgSender");
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenNotPoolOwner");
     });
     it("cannot update limit order to invalid location type", async function () {
       await expect(nucleus.connect(user1).updateLimitOrderPool({
         poolID: 1001,
         exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(0, 0),
-        locationB: INVALID_LOCATION_4
+        locationB: INVALID_LOCATION_6
       })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
     });
     it("cannot update limit order to invalid location external address zero", async function () {
@@ -2554,12 +2564,11 @@ describe("HydrogenNucleus-core", function () {
         dst: poolLocation
       });
       // test
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let pool = await nucleus.getLimitOrderPool(poolID);
       let mtLocationA = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
       let mtLocationB = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
-      let balNuA1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      let balNuB1 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
+      let balNuA1 = await token1.balanceOf(nucleus.address);
+      let balNuB1 = await token2.balanceOf(nucleus.address);
       let balPlA1 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB1 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA1 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -2584,8 +2593,8 @@ describe("HydrogenNucleus-core", function () {
         callbackData: "0x"
       };
       let tx = await nucleus.connect(user2).executeMarketOrder(params);
-      let balNuA2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      let balNuB2 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
+      let balNuA2 = await token1.balanceOf(nucleus.address);
+      let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB2 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -2612,7 +2621,7 @@ describe("HydrogenNucleus-core", function () {
       let tx = await nucleus.connect(user1).updateLimitOrderPool({
         poolID: poolID,
         exchangeRate: exchangeRate,
-        locationB: LOCATION_THIS_POOL
+        locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
       });
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, token2.address, exchangeRate, poolLocation);
       let pool = await nucleus.getLimitOrderPool(poolID);
@@ -2746,7 +2755,7 @@ describe("HydrogenNucleus-core", function () {
         tokenSources: [{
           token: token1.address,
           amount: 0,
-          location: INVALID_LOCATION_4
+          location: INVALID_LOCATION_6
         }],
         tradeRequests: [],
         hptReceiver: user1.address
@@ -2759,7 +2768,7 @@ describe("HydrogenNucleus-core", function () {
           tokenA: token1.address,
           tokenB: token2.address,
           exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(0,0),
-          locationB: INVALID_LOCATION_4
+          locationB: INVALID_LOCATION_6
         }],
         hptReceiver: user1.address
       })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
@@ -2838,7 +2847,7 @@ describe("HydrogenNucleus-core", function () {
       // set totalSupply incredibly high to force revert
       let ts1 = await nucleus.totalSupply();
       // set
-      let slotIndex = toBytes32(8);
+      let slotIndex = toBytes32(0);
       let desiredLength = toBytes32(BN.from(2).pow(248).div(1000));
       await setStorageAt(nucleus.address, slotIndex, desiredLength);
       let ts2 = await nucleus.totalSupply();
@@ -2861,8 +2870,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user1.address)).eq(4);
       expect(await nucleus.exists(poolID)).eq(false);
       await expect(nucleus.ownerOf(poolID)).to.be.reverted;
-      await expect(nucleus.tokenByIndex(11)).to.be.reverted;
-      await expect(nucleus.tokenOfOwnerByIndex(user1.address, 4)).to.be.reverted;
       await expect(nucleus.getPoolType(poolID)).to.be.reverted;
       await expect(nucleus.getGridOrderPool(poolID)).to.be.reverted;
       await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
@@ -2878,8 +2885,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user1.address)).eq(5);
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user1.address);
-      expect(await nucleus.tokenByIndex(11)).eq(poolID);
-      expect(await nucleus.tokenOfOwnerByIndex(user1.address, 4)).eq(poolID);
       expect(await nucleus.getPoolType(poolID)).eq(2);
       let pool = await nucleus.getGridOrderPool(poolID);
       expect(pool.tokens).deep.eq([]);
@@ -2905,8 +2910,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user1.address)).eq(5);
       expect(await nucleus.exists(poolID)).eq(false);
       await expect(nucleus.ownerOf(poolID)).to.be.reverted;
-      await expect(nucleus.tokenByIndex(12)).to.be.reverted;
-      await expect(nucleus.tokenOfOwnerByIndex(user1.address, 5)).to.be.reverted;
       await expect(nucleus.getPoolType(poolID)).to.be.reverted;
       await expect(nucleus.getGridOrderPool(poolID)).to.be.reverted;
       await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
@@ -2934,8 +2937,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user1.address)).eq(6);
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user1.address);
-      expect(await nucleus.tokenByIndex(12)).eq(poolID);
-      expect(await nucleus.tokenOfOwnerByIndex(user1.address, 5)).eq(poolID);
       expect(await nucleus.getPoolType(poolID)).eq(2);
       let pool = await nucleus.getGridOrderPool(poolID);
       expect(pool.tokens).deep.eq([token1.address, token2.address]);
@@ -3003,8 +3004,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user1.address)).eq(6);
       expect(await nucleus.exists(poolID)).eq(false);
       await expect(nucleus.ownerOf(poolID)).to.be.reverted;
-      await expect(nucleus.tokenByIndex(13)).to.be.reverted;
-      await expect(nucleus.tokenOfOwnerByIndex(user1.address, 6)).to.be.reverted;
       await expect(nucleus.getPoolType(poolID)).to.be.reverted;
       await expect(nucleus.getGridOrderPool(poolID)).to.be.reverted;
       await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
@@ -3032,32 +3031,32 @@ describe("HydrogenNucleus-core", function () {
           tokenA: token1.address,
           tokenB: token2.address,
           exchangeRate: exchangeRate12,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: token2.address,
           tokenB: token1.address,
           exchangeRate: exchangeRate21,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: token3.address,
           tokenB: token1.address,
           exchangeRate: exchangeRate31,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: token1.address,
           tokenB: token3.address,
           exchangeRate: exchangeRate13,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: token2.address,
           tokenB: token3.address,
           exchangeRate: exchangeRate23,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: token3.address,
           tokenB: token2.address,
           exchangeRate: exchangeRate32,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         }],
         hptReceiver: user1.address
       };
@@ -3068,8 +3067,6 @@ describe("HydrogenNucleus-core", function () {
       expect(await nucleus.balanceOf(user1.address)).eq(7);
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user1.address);
-      expect(await nucleus.tokenByIndex(13)).eq(poolID);
-      expect(await nucleus.tokenOfOwnerByIndex(user1.address, 6)).eq(poolID);
       expect(await nucleus.getPoolType(poolID)).eq(2);
       let pool = await nucleus.getGridOrderPool(poolID);
       expect(pool.tokens).deep.eq([token1.address, token2.address, token3.address]);
@@ -3184,15 +3181,14 @@ describe("HydrogenNucleus-core", function () {
 
   describe("executeMarketOrder part 2", function () {
     it("can swap in a grid order", async function () {
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let poolID = 13002;
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
       let pool = await nucleus.getGridOrderPool(poolID);
       let tradeRequest = pool.tradeRequests[0];
       let mtLocationA = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
       let mtLocationB = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
-      let balNuA1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      let balNuB1 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
+      let balNuA1 = await token1.balanceOf(nucleus.address);
+      let balNuB1 = await token2.balanceOf(nucleus.address);
       let balPlA1 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB1 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA1 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -3217,8 +3213,8 @@ describe("HydrogenNucleus-core", function () {
       };
       let tx = await nucleus.connect(user2).executeMarketOrder(params);
       let pool2 = await nucleus.getGridOrderPool(poolID);
-      let balNuA2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      let balNuB2 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
+      let balNuA2 = await token1.balanceOf(nucleus.address);
+      let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB2 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -3384,7 +3380,7 @@ describe("HydrogenNucleus-core", function () {
         poolID: 14002,
         tokenSources: [],
         tradeRequests: []
-      })).to.be.revertedWithCustomError(nucleus, "HydrogenUpdatePoolNotOwnedByMsgSender");
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenNotPoolOwner");
     });
     it("cannot update to invalid location type", async function () {
       await expect(nucleus.connect(user1).updateGridOrderPool({
@@ -3454,12 +3450,11 @@ describe("HydrogenNucleus-core", function () {
         dst: poolLocation
       });
       // test
-      let nucleusLocation = HydrogenNucleusHelper.externalAddressToLocation(nucleus.address);
       let pool = await nucleus.getGridOrderPool(poolID);
       let mtLocationA = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
       let mtLocationB = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
-      let balNuA1 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      let balNuB1 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
+      let balNuA1 = await token1.balanceOf(nucleus.address);
+      let balNuB1 = await token2.balanceOf(nucleus.address);
       let balPlA1 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB1 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA1 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -3483,8 +3478,8 @@ describe("HydrogenNucleus-core", function () {
         callbackData: "0x"
       };
       let tx = await nucleus.connect(user2).executeMarketOrder(params);
-      let balNuA2 = await nucleus.getTokenBalance(token1.address, nucleusLocation);
-      let balNuB2 = await nucleus.getTokenBalance(token2.address, nucleusLocation);
+      let balNuA2 = await token1.balanceOf(nucleus.address);
+      let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB2 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -3572,10 +3567,10 @@ describe("HydrogenNucleus-core", function () {
       expect(fees1.receiverLocation).eq(NULL_LOCATION);
     });
     it("cannot be set by non owner", async function () {
-      await expect(nucleus.connect(user1).setSwapFeesForPairs([])).to.be.revertedWith("Ownable: caller is not the owner");
+      await expect(nucleus.connect(user1).setSwapFeesForPairs([])).to.be.revertedWithCustomError(nucleus, "HydrogenNotContractOwner");
     });
     it("cannot be set to invalid location", async function () {
-      await expect(nucleus.connect(owner2).setSwapFeesForPairs([
+      await expect(nucleus.connect(owner).setSwapFeesForPairs([
         {
           // swaps from token2 to token1 cost 0.1%
           // note since 1->2 isn't set, it uses default fee
@@ -3590,9 +3585,9 @@ describe("HydrogenNucleus-core", function () {
       let fee00 = MAX_PPM.mul(2).div(1000);
       let fee12 = MAX_PPM.mul(1).div(1000);
       let fee13 = MAX_PPM;
-      let treasuryLocation = HydrogenNucleusHelper.internalAddressToLocation(owner2.address);
+      let treasuryLocation = HydrogenNucleusHelper.internalAddressToLocation(owner.address);
       let deployerLocation = HydrogenNucleusHelper.internalAddressToLocation(deployer.address);
-      let tx = await nucleus.connect(owner2).setSwapFeesForPairs([
+      let tx = await nucleus.connect(owner).setSwapFeesForPairs([
         {
           // default fee: 0.2%
           tokenA: AddressZero,
@@ -3859,50 +3854,10 @@ describe("HydrogenNucleus-core", function () {
     });
   });
 
-  describe("tokenURI", function () {
-    let base = "https://subdomain.hysland.finance/pools/?chainID=31337&poolID=";
-    let uri = "https://subdomain.hysland.finance/pools/?chainID=31337&poolID=1001";
-    it("starts null", async function () {
-      expect(await nucleus.baseURI()).eq("");
-      expect(await nucleus.tokenURI(1001)).eq("");
-    });
-    it("non owner cannot set base", async function () {
-      await expect(nucleus.connect(user1).setBaseURI(base)).to.be.revertedWith("Ownable: caller is not the owner");
-    });
-    it("owner can set base", async function () {
-      let tx = await nucleus.connect(owner2).setBaseURI(base);
-      await expect(tx).to.emit(nucleus, "BaseURISet").withArgs(base);
-    });
-    it("can get new uri", async function () {
-      expect(await nucleus.baseURI()).eq(base);
-      expect(await nucleus.tokenURI(1001)).eq(uri);
-    });
-    it("cannot get uri of nonexistant token", async function () {
-      await expect(nucleus.tokenURI(999)).to.be.revertedWith("ERC721: invalid token ID");
-    });
-  });
-
-  describe("contractURI", function () {
-    let uri = "https://subdomain.hysland.finance/contract-uri/";
-    it("starts null", async function () {
-      expect(await nucleus.contractURI()).eq("");
-    });
-    it("non owner cannot set uri", async function () {
-      await expect(nucleus.connect(user1).setContractURI(uri)).to.be.revertedWith("Ownable: caller is not the owner");
-    });
-    it("owner can set uri", async function () {
-      let tx = await nucleus.connect(owner2).setContractURI(uri);
-      await expect(tx).to.emit(nucleus, "ContractURISet").withArgs(uri);
-    });
-    it("can get new uri", async function () {
-      expect(await nucleus.contractURI()).eq(uri);
-    });
-  });
-
   describe("multicall", function () {
     // only test failure cases. success cases are handled above
-    it("cannot call non existant function 1", async function () {
-      await expect(nucleus.multicall(["0x"])).to.be.revertedWithCustomError(nucleus, "HydrogenUnknownError");
+    it("can multicall receive", async function () {
+      await expect(nucleus.multicall(["0x"])).to.not.be.reverted;
     });
     it("cannot call non existant function 2", async function () {
       await expect(nucleus.multicall(["0x12345678"])).to.be.revertedWithCustomError(nucleus, "HydrogenUnknownError");
@@ -3927,21 +3882,1260 @@ describe("HydrogenNucleus-core", function () {
     });
   });
 
-  describe("gas token", function () {
-    it("reverts on receive", async function () {
-      await expect(user1.sendTransaction({
-        to: nucleus.address,
-        value: 1
-      })).to.be.reverted;
+  describe("tokenTransfer part 3", function () {
+    it("can transfer from known location to flag location external address", async function () {
+      let src = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let dst = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let amount = WeiPerEther.mul(3);
+      let tx = await nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: amount,
+        src: src,
+        dst: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS,
+      });
+      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      expect(balSrc1.sub(balSrc2)).eq(amount);
+      expect(balDst2.sub(balDst1)).eq(amount);
+      expect(balNu1.sub(balNu2)).eq(amount);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
     });
-    it("reverts if including value in function call", async function () {
-      //await expect(nucleus.connect(user1).multicall([], {value:1})).to.be.revertedWith("asdf");
-      // Error: non-payable method cannot override value
-      await expect(user1.sendTransaction({
-        to: nucleus.address,
-        data: "0x8da5cb5b",
-        value: 1
-      })).to.be.reverted;
+    it("can transfer from known location to flag location internal address", async function () {
+      let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let dst = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let amount = WeiPerEther.mul(3);
+      let tx = await nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: amount,
+        src: src,
+        dst: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS,
+      });
+      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      expect(balSrc1.sub(balSrc2)).eq(amount);
+      expect(balDst2.sub(balDst1)).eq(amount);
+      expect(balNu2.sub(balNu1)).eq(amount);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
+    });
+    it("can transfer from flag location external address to known location", async function () {
+      let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let dst = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
+      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let amount = WeiPerEther.mul(3);
+      let tx = await nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: amount,
+        src: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS,
+        dst: dst
+      });
+      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      expect(balSrc1.sub(balSrc2)).eq(amount);
+      expect(balDst2.sub(balDst1)).eq(amount);
+      expect(balNu2.sub(balNu1)).eq(amount);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
+      await expect(tx).to.emit(token1, "Transfer").withArgs(user1.address, nucleus.address, amount);
+    });
+    it("can transfer from flag location external address to flag location external address", async function () {
+      let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let dst = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let amount = WeiPerEther.mul(3);
+      let tx = await nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: amount,
+        src: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS,
+        dst: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS
+      });
+      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      expect(balSrc1.sub(balSrc2)).eq(0);
+      expect(balDst2.sub(balDst1)).eq(0);
+      expect(balNu2.sub(balNu1)).eq(0);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
+    });
+    it("can transfer from flag location external address to flag location internal address", async function () {
+      let src = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let dst = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let amount = WeiPerEther.mul(3);
+      let tx = await nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: amount,
+        src: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS,
+        dst: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS,
+      });
+      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      expect(balSrc1.sub(balSrc2)).eq(amount);
+      expect(balDst2.sub(balDst1)).eq(amount);
+      expect(balNu2.sub(balNu1)).eq(amount);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
+      await expect(tx).to.emit(token1, "Transfer").withArgs(user1.address, nucleus.address, amount);
+    });
+    it("can transfer from flag location internal address to known location", async function () {
+      let src = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let dst = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
+      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let amount = WeiPerEther.mul(3);
+      let tx = await nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: amount,
+        src: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS,
+        dst: dst
+      });
+      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      expect(balSrc1.sub(balSrc2)).eq(amount);
+      expect(balDst2.sub(balDst1)).eq(amount);
+      expect(balNu2.sub(balNu1)).eq(0);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
+    });
+    it("can transfer from flag location internal address to flag location external address", async function () {
+      let src = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let dst = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let amount = WeiPerEther.mul(3);
+      let tx = await nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: amount,
+        src: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS,
+        dst: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS,
+      });
+      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      expect(balSrc1.sub(balSrc2)).eq(amount);
+      expect(balDst2.sub(balDst1)).eq(amount);
+      expect(balNu1.sub(balNu2)).eq(amount);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
+      await expect(tx).to.emit(token1, "Transfer").withArgs(nucleus.address, user1.address, amount);
+    });
+    it("can transfer from flag location internal address to flag location internal address", async function () {
+      let src = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let dst = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let balSrc1 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst1 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let amount = WeiPerEther.mul(3);
+      let tx = await nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: amount,
+        src: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS,
+        dst: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS,
+      });
+      let balSrc2 = await nucleus.getTokenBalance(token1.address, src);
+      let balDst2 = await nucleus.getTokenBalance(token1.address, dst);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      expect(balSrc1.sub(balSrc2)).eq(0);
+      expect(balDst2.sub(balDst1)).eq(0);
+      expect(balNu1.sub(balNu2)).eq(0);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, src, dst, amount);
+    });
+    it("cannot transfer from flag location pool", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: 1,
+        src: HydrogenNucleusHelper.LOCATION_FLAG_POOL,
+        dst: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenMissingPoolContext");
+    });
+    it("cannot transfer to flag location pool", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: 1,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.LOCATION_FLAG_POOL,
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenMissingPoolContext");
+    });
+    it("cannot transfer from invalid flag location", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: 1,
+        src: INVALID_LOCATION_FLAG,
+        dst: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationFlag");
+    });
+    it("cannot transfer to invalid flag location", async function () {
+      await expect(nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        amount: 1,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: INVALID_LOCATION_FLAG,
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationFlag");
+    });
+  });
+
+  describe("createLimitOrderPool part 2", function () {
+    it("can create limit order funded by flag location external address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = (totalSupply+1) * 1000 + 1;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let amountA = WeiPerEther.mul(5);
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(1, 1);
+      let locationA = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let locationB = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      expect(await nucleus.exists(poolID)).eq(false);
+      await expect(nucleus.ownerOf(poolID)).to.be.reverted;
+      await expect(nucleus.getPoolType(poolID)).to.be.reverted;
+      await expect(nucleus.getLimitOrderPool(poolID)).to.be.reverted;
+      await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let balEA1 = await token1.balanceOf(user1.address);
+      let balPL1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let params = {
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: amountA,
+        exchangeRate: exchangeRate,
+        locationA: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS,
+        locationB: locationB,
+        hptReceiver: user1.address
+      };
+      let poolIDout = await nucleus.connect(user1).callStatic.createLimitOrderPool(params);
+      expect(poolIDout).eq(poolID);
+      let tx = await nucleus.connect(user1).createLimitOrderPool(params);
+      expect(await nucleus.totalSupply()).eq(totalSupply+1);
+      expect(await nucleus.exists(poolID)).eq(true);
+      expect(await nucleus.ownerOf(poolID)).eq(user1.address);
+      expect(await nucleus.getPoolType(poolID)).eq(1);
+      let pool = await nucleus.getLimitOrderPool(poolID);
+      expect(pool.tokenA).eq(token1.address);
+      expect(pool.tokenB).eq(token2.address);
+      expect(pool.amountA).eq(amountA);
+      expect(pool.exchangeRate).eq(exchangeRate);
+      expect(pool.locationB).eq(locationB);
+      let tradeRequest = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest.amountA).eq(amountA);
+      expect(tradeRequest.exchangeRate).eq(exchangeRate);
+      expect(tradeRequest.locationB).eq(locationB);
+      expect(await nucleus.getTokenBalance(token1.address, poolLocation)).eq(amountA);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      let balEA2 = await token1.balanceOf(user1.address);
+      let balPL2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      expect(balNu2.sub(balNu1)).eq(amountA);
+      expect(balEA1.sub(balEA2)).eq(amountA);
+      expect(balPL2.sub(balPL1)).eq(amountA);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, locationA, poolLocation, amountA);
+      await expect(tx).to.emit(token1, "Transfer").withArgs(user1.address, nucleus.address, amountA);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, params.tokenA, params.tokenB, params.exchangeRate, params.locationB);
+    });
+    it("can create limit order funded by flag location internal address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = (totalSupply+1) * 1000 + 1;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let amountA = WeiPerEther.mul(5);
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(1, 1);
+      let locationA = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let locationB = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      expect(await nucleus.exists(poolID)).eq(false);
+      await expect(nucleus.ownerOf(poolID)).to.be.reverted;
+      await expect(nucleus.getPoolType(poolID)).to.be.reverted;
+      await expect(nucleus.getLimitOrderPool(poolID)).to.be.reverted;
+      await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let balEA1 = await token1.balanceOf(user1.address);
+      let balPL1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let params = {
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: amountA,
+        exchangeRate: exchangeRate,
+        locationA: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS,
+        locationB: locationB,
+        hptReceiver: user1.address
+      };
+      let poolIDout = await nucleus.connect(user1).callStatic.createLimitOrderPool(params);
+      expect(poolIDout).eq(poolID);
+      let tx = await nucleus.connect(user1).createLimitOrderPool(params);
+      expect(await nucleus.totalSupply()).eq(totalSupply+1);
+      expect(await nucleus.exists(poolID)).eq(true);
+      expect(await nucleus.ownerOf(poolID)).eq(user1.address);
+      expect(await nucleus.getPoolType(poolID)).eq(1);
+      let pool = await nucleus.getLimitOrderPool(poolID);
+      expect(pool.tokenA).eq(token1.address);
+      expect(pool.tokenB).eq(token2.address);
+      expect(pool.amountA).eq(amountA);
+      expect(pool.exchangeRate).eq(exchangeRate);
+      expect(pool.locationB).eq(locationB);
+      let tradeRequest = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest.amountA).eq(amountA);
+      expect(tradeRequest.exchangeRate).eq(exchangeRate);
+      expect(tradeRequest.locationB).eq(locationB);
+      expect(await nucleus.getTokenBalance(token1.address, poolLocation)).eq(amountA);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      let balEA2 = await token1.balanceOf(user1.address);
+      let balPL2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      expect(balNu2.sub(balNu1)).eq(0);
+      expect(balEA1.sub(balEA2)).eq(0);
+      expect(balPL2.sub(balPL1)).eq(amountA);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, locationA, poolLocation, amountA);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, params.tokenA, params.tokenB, params.exchangeRate, params.locationB);
+    });
+    it("cannot create limit order funded by flag location pool", async function () {
+      await expect(nucleus.connect(user1).createLimitOrderPool({
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: 1,
+        exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1,1),
+        locationA: HydrogenNucleusHelper.LOCATION_FLAG_POOL,
+        locationB: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        hptReceiver: user1.address
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenMissingPoolContext");
+    });
+    it("can create limit order with output to flag location external address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = (totalSupply+1) * 1000 + 1;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let amountA = WeiPerEther.mul(5);
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(1, 1);
+      let locationA = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let locationB = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      expect(await nucleus.exists(poolID)).eq(false);
+      await expect(nucleus.ownerOf(poolID)).to.be.reverted;
+      await expect(nucleus.getPoolType(poolID)).to.be.reverted;
+      await expect(nucleus.getLimitOrderPool(poolID)).to.be.reverted;
+      await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let balEA1 = await token1.balanceOf(user1.address);
+      let balPL1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let params = {
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: amountA,
+        exchangeRate: exchangeRate,
+        locationA: locationA,
+        locationB: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS,
+        hptReceiver: user1.address
+      };
+      let poolIDout = await nucleus.connect(user1).callStatic.createLimitOrderPool(params);
+      expect(poolIDout).eq(poolID);
+      let tx = await nucleus.connect(user1).createLimitOrderPool(params);
+      expect(await nucleus.totalSupply()).eq(totalSupply+1);
+      expect(await nucleus.exists(poolID)).eq(true);
+      expect(await nucleus.ownerOf(poolID)).eq(user1.address);
+      expect(await nucleus.getPoolType(poolID)).eq(1);
+      let pool = await nucleus.getLimitOrderPool(poolID);
+      expect(pool.tokenA).eq(token1.address);
+      expect(pool.tokenB).eq(token2.address);
+      expect(pool.amountA).eq(amountA);
+      expect(pool.exchangeRate).eq(exchangeRate);
+      expect(pool.locationB).eq(locationB);
+      let tradeRequest = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest.amountA).eq(amountA);
+      expect(tradeRequest.exchangeRate).eq(exchangeRate);
+      expect(tradeRequest.locationB).eq(locationB);
+      expect(await nucleus.getTokenBalance(token1.address, poolLocation)).eq(amountA);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      let balEA2 = await token1.balanceOf(user1.address);
+      let balPL2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      expect(balNu2.sub(balNu1)).eq(0);
+      expect(balEA1.sub(balEA2)).eq(0);
+      expect(balPL2.sub(balPL1)).eq(amountA);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, locationA, poolLocation, amountA);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, params.tokenA, params.tokenB, params.exchangeRate, locationB);
+    });
+    it("can create limit order with output to flag location internal address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = (totalSupply+1) * 1000 + 1;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let amountA = WeiPerEther.mul(5);
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(1, 1);
+      let locationA = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let locationB = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      expect(await nucleus.exists(poolID)).eq(false);
+      await expect(nucleus.ownerOf(poolID)).to.be.reverted;
+      await expect(nucleus.getPoolType(poolID)).to.be.reverted;
+      await expect(nucleus.getLimitOrderPool(poolID)).to.be.reverted;
+      await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let balEA1 = await token1.balanceOf(user1.address);
+      let balPL1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let params = {
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: amountA,
+        exchangeRate: exchangeRate,
+        locationA: locationA,
+        locationB: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS,
+        hptReceiver: user1.address
+      };
+      let poolIDout = await nucleus.connect(user1).callStatic.createLimitOrderPool(params);
+      expect(poolIDout).eq(poolID);
+      let tx = await nucleus.connect(user1).createLimitOrderPool(params);
+      expect(await nucleus.totalSupply()).eq(totalSupply+1);
+      expect(await nucleus.exists(poolID)).eq(true);
+      expect(await nucleus.ownerOf(poolID)).eq(user1.address);
+      expect(await nucleus.getPoolType(poolID)).eq(1);
+      let pool = await nucleus.getLimitOrderPool(poolID);
+      expect(pool.tokenA).eq(token1.address);
+      expect(pool.tokenB).eq(token2.address);
+      expect(pool.amountA).eq(amountA);
+      expect(pool.exchangeRate).eq(exchangeRate);
+      expect(pool.locationB).eq(locationB);
+      let tradeRequest = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest.amountA).eq(amountA);
+      expect(tradeRequest.exchangeRate).eq(exchangeRate);
+      expect(tradeRequest.locationB).eq(locationB);
+      expect(await nucleus.getTokenBalance(token1.address, poolLocation)).eq(amountA);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      let balEA2 = await token1.balanceOf(user1.address);
+      let balPL2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      expect(balNu2.sub(balNu1)).eq(amountA);
+      expect(balEA1.sub(balEA2)).eq(amountA);
+      expect(balPL2.sub(balPL1)).eq(amountA);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, locationA, poolLocation, amountA);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, params.tokenA, params.tokenB, params.exchangeRate, locationB);
+    });
+    it("can create limit order with output to flag location pool", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = (totalSupply+1) * 1000 + 1;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let amountA = WeiPerEther.mul(5);
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(1, 1);
+      let locationA = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let locationB = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      expect(await nucleus.exists(poolID)).eq(false);
+      await expect(nucleus.ownerOf(poolID)).to.be.reverted;
+      await expect(nucleus.getPoolType(poolID)).to.be.reverted;
+      await expect(nucleus.getLimitOrderPool(poolID)).to.be.reverted;
+      await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let balEA1 = await token1.balanceOf(user1.address);
+      let balPL1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let params = {
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: amountA,
+        exchangeRate: exchangeRate,
+        locationA: locationA,
+        locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL,
+        hptReceiver: user1.address
+      };
+      let poolIDout = await nucleus.connect(user1).callStatic.createLimitOrderPool(params);
+      expect(poolIDout).eq(poolID);
+      let tx = await nucleus.connect(user1).createLimitOrderPool(params);
+      expect(await nucleus.totalSupply()).eq(totalSupply+1);
+      expect(await nucleus.exists(poolID)).eq(true);
+      expect(await nucleus.ownerOf(poolID)).eq(user1.address);
+      expect(await nucleus.getPoolType(poolID)).eq(1);
+      let pool = await nucleus.getLimitOrderPool(poolID);
+      expect(pool.tokenA).eq(token1.address);
+      expect(pool.tokenB).eq(token2.address);
+      expect(pool.amountA).eq(amountA);
+      expect(pool.exchangeRate).eq(exchangeRate);
+      expect(pool.locationB).eq(locationB);
+      let tradeRequest = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest.amountA).eq(amountA);
+      expect(tradeRequest.exchangeRate).eq(exchangeRate);
+      expect(tradeRequest.locationB).eq(locationB);
+      expect(await nucleus.getTokenBalance(token1.address, poolLocation)).eq(amountA);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      let balEA2 = await token1.balanceOf(user1.address);
+      let balPL2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      expect(balNu2.sub(balNu1)).eq(amountA);
+      expect(balEA1.sub(balEA2)).eq(amountA);
+      expect(balPL2.sub(balPL1)).eq(amountA);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, locationA, poolLocation, amountA);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, params.tokenA, params.tokenB, params.exchangeRate, locationB);
+    });
+  });
+
+  describe("updateLimitOrderPool part 2", function () {
+    it("can set locationB to known location", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = totalSupply * 1000 + 1;
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(1,2);
+      let locationB = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
+      let tx = await nucleus.connect(user1).updateLimitOrderPool({
+        poolID: poolID,
+        exchangeRate: exchangeRate,
+        locationB: locationB
+      });
+      let pool = await nucleus.getLimitOrderPool(poolID);
+      expect(pool.exchangeRate).eq(exchangeRate);
+      expect(pool.locationB).eq(locationB);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, token2.address, exchangeRate, locationB);
+    });
+    it("can set locationB to flag location external address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = totalSupply * 1000 + 1;
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(1,2);
+      let locationB = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let tx = await nucleus.connect(user1).updateLimitOrderPool({
+        poolID: poolID,
+        exchangeRate: exchangeRate,
+        locationB: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS
+      });
+      let pool = await nucleus.getLimitOrderPool(poolID);
+      expect(pool.exchangeRate).eq(exchangeRate);
+      expect(pool.locationB).eq(locationB);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, token2.address, exchangeRate, locationB);
+    });
+    it("can set locationB to flag location internal address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = totalSupply * 1000 + 1;
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(1,2);
+      let locationB = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let tx = await nucleus.connect(user1).updateLimitOrderPool({
+        poolID: poolID,
+        exchangeRate: exchangeRate,
+        locationB: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS
+      });
+      let pool = await nucleus.getLimitOrderPool(poolID);
+      expect(pool.exchangeRate).eq(exchangeRate);
+      expect(pool.locationB).eq(locationB);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, token2.address, exchangeRate, locationB);
+    });
+    it("can set locationB to flag location pool", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = totalSupply * 1000 + 1;
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(1,2);
+      let locationB = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let tx = await nucleus.connect(user1).updateLimitOrderPool({
+        poolID: poolID,
+        exchangeRate: exchangeRate,
+        locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
+      });
+      let pool = await nucleus.getLimitOrderPool(poolID);
+      expect(pool.exchangeRate).eq(exchangeRate);
+      expect(pool.locationB).eq(locationB);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, token2.address, exchangeRate, locationB);
+    });
+  });
+
+  describe("createGridOrderPool part 2", function () {
+    // these tests also cover updateGridOrderPool() as the transform is applied in _updateGridOrderPool()
+    before(async function () {
+      await token1.connect(user1).mint(user1.address, WeiPerEther.mul(10_000));
+      await nucleus.connect(user1).tokenTransfer({
+        token: token1.address,
+        src: HydrogenNucleusHelper.externalAddressToLocation(user1.address),
+        dst: HydrogenNucleusHelper.internalAddressToLocation(user1.address),
+        amount: WeiPerEther.mul(5_000)
+      });
+    });
+    it("can create grid order funded by flag location external address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = (totalSupply+1) * 1000 + 2;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let amountA = WeiPerEther.mul(100);
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(15, 10);
+      let locationA = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let locationB = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      expect(await nucleus.exists(poolID)).eq(false);
+      await expect(nucleus.ownerOf(poolID)).to.be.reverted;
+      await expect(nucleus.getPoolType(poolID)).to.be.reverted;
+      await expect(nucleus.getGridOrderPool(poolID)).to.be.reverted;
+      await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let balEA1 = await token1.balanceOf(user1.address);
+      let balPL1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let params = {
+        tokenSources: [{
+          token: token1.address,
+          amount: amountA,
+          location: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS
+        }],
+        tradeRequests: [{
+          tokenA: token1.address,
+          tokenB: token2.address,
+          exchangeRate: exchangeRate,
+          locationB: locationB
+        }],
+        hptReceiver: user1.address
+      };
+      let poolIDout = await nucleus.connect(user1).callStatic.createGridOrderPool(params);
+      expect(poolIDout).eq(poolID);
+      let tx = await nucleus.connect(user1).createGridOrderPool(params);
+      expect(await nucleus.exists(poolID)).eq(true);
+      expect(await nucleus.ownerOf(poolID)).eq(user1.address);
+      expect(await nucleus.getPoolType(poolID)).eq(2);
+      let pool = await nucleus.getGridOrderPool(poolID);
+      expect(pool.tokens).deep.eq([token1.address, token2.address]);
+      expect(pool.balances.length).eq(2);
+      expect(pool.balances[0]).eq(amountA);
+      expect(pool.balances[1]).eq(0);
+      expect(pool.tradeRequests.length).eq(2);
+      expect(pool.tradeRequests[0].tokenA).eq(token1.address);
+      expect(pool.tradeRequests[0].tokenB).eq(token2.address);
+      expect(pool.tradeRequests[0].exchangeRate).eq(exchangeRate);
+      expect(pool.tradeRequests[0].locationB).eq(locationB);
+      expect(pool.tradeRequests[1].tokenA).eq(token2.address);
+      expect(pool.tradeRequests[1].tokenB).eq(token1.address);
+      expect(pool.tradeRequests[1].exchangeRate).eq(NULL_EXCHANGE_RATE);
+      expect(pool.tradeRequests[1].locationB).eq(NULL_LOCATION);
+      let tradeRequest0 = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest0.amountA).eq(amountA);
+      expect(tradeRequest0.exchangeRate).eq(exchangeRate);
+      expect(tradeRequest0.locationB).eq(locationB);
+      let tradeRequest1 = await nucleus.getTradeRequest(poolID, token2.address, token1.address);
+      expect(tradeRequest1.amountA).eq(0);
+      expect(tradeRequest1.exchangeRate).eq(NULL_EXCHANGE_RATE);
+      expect(tradeRequest1.locationB).eq(NULL_LOCATION);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      let balEA2 = await token1.balanceOf(user1.address);
+      let balPL2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      expect(balNu2.sub(balNu1)).eq(amountA);
+      expect(balEA1.sub(balEA2)).eq(amountA);
+      expect(balPL2.sub(balPL1)).eq(amountA);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, locationA, poolLocation, amountA);
+      await expect(tx).to.emit(token1, "Transfer").withArgs(user1.address, nucleus.address, amountA);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, token2.address, exchangeRate, locationB);
+    });
+    it("can create grid order funded by flag location internal address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = (totalSupply+1) * 1000 + 2;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let amountA = WeiPerEther.mul(100);
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(15, 10);
+      let locationA = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let locationB = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      expect(await nucleus.exists(poolID)).eq(false);
+      await expect(nucleus.ownerOf(poolID)).to.be.reverted;
+      await expect(nucleus.getPoolType(poolID)).to.be.reverted;
+      await expect(nucleus.getGridOrderPool(poolID)).to.be.reverted;
+      await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let balEA1 = await token1.balanceOf(user1.address);
+      let balPL1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let params = {
+        tokenSources: [{
+          token: token1.address,
+          amount: amountA,
+          location: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS
+        }],
+        tradeRequests: [{
+          tokenA: token1.address,
+          tokenB: token2.address,
+          exchangeRate: exchangeRate,
+          locationB: locationB
+        }],
+        hptReceiver: user1.address
+      };
+      let poolIDout = await nucleus.connect(user1).callStatic.createGridOrderPool(params);
+      expect(poolIDout).eq(poolID);
+      let tx = await nucleus.connect(user1).createGridOrderPool(params);
+      expect(await nucleus.exists(poolID)).eq(true);
+      expect(await nucleus.ownerOf(poolID)).eq(user1.address);
+      expect(await nucleus.getPoolType(poolID)).eq(2);
+      let pool = await nucleus.getGridOrderPool(poolID);
+      expect(pool.tokens).deep.eq([token1.address, token2.address]);
+      expect(pool.balances.length).eq(2);
+      expect(pool.balances[0]).eq(amountA);
+      expect(pool.balances[1]).eq(0);
+      expect(pool.tradeRequests.length).eq(2);
+      expect(pool.tradeRequests[0].tokenA).eq(token1.address);
+      expect(pool.tradeRequests[0].tokenB).eq(token2.address);
+      expect(pool.tradeRequests[0].exchangeRate).eq(exchangeRate);
+      expect(pool.tradeRequests[0].locationB).eq(locationB);
+      expect(pool.tradeRequests[1].tokenA).eq(token2.address);
+      expect(pool.tradeRequests[1].tokenB).eq(token1.address);
+      expect(pool.tradeRequests[1].exchangeRate).eq(NULL_EXCHANGE_RATE);
+      expect(pool.tradeRequests[1].locationB).eq(NULL_LOCATION);
+      let tradeRequest0 = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest0.amountA).eq(amountA);
+      expect(tradeRequest0.exchangeRate).eq(exchangeRate);
+      expect(tradeRequest0.locationB).eq(locationB);
+      let tradeRequest1 = await nucleus.getTradeRequest(poolID, token2.address, token1.address);
+      expect(tradeRequest1.amountA).eq(0);
+      expect(tradeRequest1.exchangeRate).eq(NULL_EXCHANGE_RATE);
+      expect(tradeRequest1.locationB).eq(NULL_LOCATION);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      let balEA2 = await token1.balanceOf(user1.address);
+      let balPL2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      expect(balNu2.sub(balNu1)).eq(0);
+      expect(balEA1.sub(balEA2)).eq(0);
+      expect(balPL2.sub(balPL1)).eq(amountA);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, locationA, poolLocation, amountA);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, token2.address, exchangeRate, locationB);
+    });
+    it("can create grid order with output to flag location external address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = (totalSupply+1) * 1000 + 2;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let amountA = WeiPerEther.mul(100);
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(15, 10);
+      let locationA = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      let locationB = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      expect(await nucleus.exists(poolID)).eq(false);
+      await expect(nucleus.ownerOf(poolID)).to.be.reverted;
+      await expect(nucleus.getPoolType(poolID)).to.be.reverted;
+      await expect(nucleus.getGridOrderPool(poolID)).to.be.reverted;
+      await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let balEA1 = await token1.balanceOf(user1.address);
+      let balPL1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let params = {
+        tokenSources: [{
+          token: token1.address,
+          amount: amountA,
+          location: locationA
+        }],
+        tradeRequests: [{
+          tokenA: token1.address,
+          tokenB: token2.address,
+          exchangeRate: exchangeRate,
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS
+        }],
+        hptReceiver: user1.address
+      };
+      let poolIDout = await nucleus.connect(user1).callStatic.createGridOrderPool(params);
+      expect(poolIDout).eq(poolID);
+      let tx = await nucleus.connect(user1).createGridOrderPool(params);
+      expect(await nucleus.exists(poolID)).eq(true);
+      expect(await nucleus.ownerOf(poolID)).eq(user1.address);
+      expect(await nucleus.getPoolType(poolID)).eq(2);
+      let pool = await nucleus.getGridOrderPool(poolID);
+      expect(pool.tokens).deep.eq([token1.address, token2.address]);
+      expect(pool.balances.length).eq(2);
+      expect(pool.balances[0]).eq(amountA);
+      expect(pool.balances[1]).eq(0);
+      expect(pool.tradeRequests.length).eq(2);
+      expect(pool.tradeRequests[0].tokenA).eq(token1.address);
+      expect(pool.tradeRequests[0].tokenB).eq(token2.address);
+      expect(pool.tradeRequests[0].exchangeRate).eq(exchangeRate);
+      expect(pool.tradeRequests[0].locationB).eq(locationB);
+      expect(pool.tradeRequests[1].tokenA).eq(token2.address);
+      expect(pool.tradeRequests[1].tokenB).eq(token1.address);
+      expect(pool.tradeRequests[1].exchangeRate).eq(NULL_EXCHANGE_RATE);
+      expect(pool.tradeRequests[1].locationB).eq(NULL_LOCATION);
+      let tradeRequest0 = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest0.amountA).eq(amountA);
+      expect(tradeRequest0.exchangeRate).eq(exchangeRate);
+      expect(tradeRequest0.locationB).eq(locationB);
+      let tradeRequest1 = await nucleus.getTradeRequest(poolID, token2.address, token1.address);
+      expect(tradeRequest1.amountA).eq(0);
+      expect(tradeRequest1.exchangeRate).eq(NULL_EXCHANGE_RATE);
+      expect(tradeRequest1.locationB).eq(NULL_LOCATION);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      let balEA2 = await token1.balanceOf(user1.address);
+      let balPL2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      expect(balNu2.sub(balNu1)).eq(0);
+      expect(balEA1.sub(balEA2)).eq(0);
+      expect(balPL2.sub(balPL1)).eq(amountA);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, locationA, poolLocation, amountA);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, token2.address, exchangeRate, locationB);
+    });
+    it("can create grid order with output to flag location internal address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = (totalSupply+1) * 1000 + 2;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let amountA = WeiPerEther.mul(100);
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(15, 10);
+      let locationA = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let locationB = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+      expect(await nucleus.exists(poolID)).eq(false);
+      await expect(nucleus.ownerOf(poolID)).to.be.reverted;
+      await expect(nucleus.getPoolType(poolID)).to.be.reverted;
+      await expect(nucleus.getGridOrderPool(poolID)).to.be.reverted;
+      await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let balEA1 = await token1.balanceOf(user1.address);
+      let balPL1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let params = {
+        tokenSources: [{
+          token: token1.address,
+          amount: amountA,
+          location: locationA
+        }],
+        tradeRequests: [{
+          tokenA: token1.address,
+          tokenB: token2.address,
+          exchangeRate: exchangeRate,
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS
+        }],
+        hptReceiver: user1.address
+      };
+      let poolIDout = await nucleus.connect(user1).callStatic.createGridOrderPool(params);
+      expect(poolIDout).eq(poolID);
+      let tx = await nucleus.connect(user1).createGridOrderPool(params);
+      expect(await nucleus.exists(poolID)).eq(true);
+      expect(await nucleus.ownerOf(poolID)).eq(user1.address);
+      expect(await nucleus.getPoolType(poolID)).eq(2);
+      let pool = await nucleus.getGridOrderPool(poolID);
+      expect(pool.tokens).deep.eq([token1.address, token2.address]);
+      expect(pool.balances.length).eq(2);
+      expect(pool.balances[0]).eq(amountA);
+      expect(pool.balances[1]).eq(0);
+      expect(pool.tradeRequests.length).eq(2);
+      expect(pool.tradeRequests[0].tokenA).eq(token1.address);
+      expect(pool.tradeRequests[0].tokenB).eq(token2.address);
+      expect(pool.tradeRequests[0].exchangeRate).eq(exchangeRate);
+      expect(pool.tradeRequests[0].locationB).eq(locationB);
+      expect(pool.tradeRequests[1].tokenA).eq(token2.address);
+      expect(pool.tradeRequests[1].tokenB).eq(token1.address);
+      expect(pool.tradeRequests[1].exchangeRate).eq(NULL_EXCHANGE_RATE);
+      expect(pool.tradeRequests[1].locationB).eq(NULL_LOCATION);
+      let tradeRequest0 = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest0.amountA).eq(amountA);
+      expect(tradeRequest0.exchangeRate).eq(exchangeRate);
+      expect(tradeRequest0.locationB).eq(locationB);
+      let tradeRequest1 = await nucleus.getTradeRequest(poolID, token2.address, token1.address);
+      expect(tradeRequest1.amountA).eq(0);
+      expect(tradeRequest1.exchangeRate).eq(NULL_EXCHANGE_RATE);
+      expect(tradeRequest1.locationB).eq(NULL_LOCATION);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      let balEA2 = await token1.balanceOf(user1.address);
+      let balPL2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      expect(balNu2.sub(balNu1)).eq(amountA);
+      expect(balEA1.sub(balEA2)).eq(amountA);
+      expect(balPL2.sub(balPL1)).eq(amountA);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, locationA, poolLocation, amountA);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, token2.address, exchangeRate, locationB);
+    });
+    it("can create grid order with output to flag location pool", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = (totalSupply+1) * 1000 + 2;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      let amountA = WeiPerEther.mul(100);
+      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(15, 10);
+      let locationA = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+      let locationB = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      expect(await nucleus.exists(poolID)).eq(false);
+      await expect(nucleus.ownerOf(poolID)).to.be.reverted;
+      await expect(nucleus.getPoolType(poolID)).to.be.reverted;
+      await expect(nucleus.getGridOrderPool(poolID)).to.be.reverted;
+      await expect(nucleus.getTradeRequest(poolID, token1.address, token2.address)).to.be.reverted;
+      let balNu1 = await token1.balanceOf(nucleus.address);
+      let balEA1 = await token1.balanceOf(user1.address);
+      let balPL1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let params = {
+        tokenSources: [{
+          token: token1.address,
+          amount: amountA,
+          location: locationA
+        }],
+        tradeRequests: [{
+          tokenA: token1.address,
+          tokenB: token2.address,
+          exchangeRate: exchangeRate,
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
+        }],
+        hptReceiver: user1.address
+      };
+      let poolIDout = await nucleus.connect(user1).callStatic.createGridOrderPool(params);
+      expect(poolIDout).eq(poolID);
+      let tx = await nucleus.connect(user1).createGridOrderPool(params);
+      expect(await nucleus.exists(poolID)).eq(true);
+      expect(await nucleus.ownerOf(poolID)).eq(user1.address);
+      expect(await nucleus.getPoolType(poolID)).eq(2);
+      let pool = await nucleus.getGridOrderPool(poolID);
+      expect(pool.tokens).deep.eq([token1.address, token2.address]);
+      expect(pool.balances.length).eq(2);
+      expect(pool.balances[0]).eq(amountA);
+      expect(pool.balances[1]).eq(0);
+      expect(pool.tradeRequests.length).eq(2);
+      expect(pool.tradeRequests[0].tokenA).eq(token1.address);
+      expect(pool.tradeRequests[0].tokenB).eq(token2.address);
+      expect(pool.tradeRequests[0].exchangeRate).eq(exchangeRate);
+      expect(pool.tradeRequests[0].locationB).eq(locationB);
+      expect(pool.tradeRequests[1].tokenA).eq(token2.address);
+      expect(pool.tradeRequests[1].tokenB).eq(token1.address);
+      expect(pool.tradeRequests[1].exchangeRate).eq(NULL_EXCHANGE_RATE);
+      expect(pool.tradeRequests[1].locationB).eq(NULL_LOCATION);
+      let tradeRequest0 = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest0.amountA).eq(amountA);
+      expect(tradeRequest0.exchangeRate).eq(exchangeRate);
+      expect(tradeRequest0.locationB).eq(locationB);
+      let tradeRequest1 = await nucleus.getTradeRequest(poolID, token2.address, token1.address);
+      expect(tradeRequest1.amountA).eq(0);
+      expect(tradeRequest1.exchangeRate).eq(NULL_EXCHANGE_RATE);
+      expect(tradeRequest1.locationB).eq(NULL_LOCATION);
+      let balNu2 = await token1.balanceOf(nucleus.address);
+      let balEA2 = await token1.balanceOf(user1.address);
+      let balPL2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      expect(balNu2.sub(balNu1)).eq(amountA);
+      expect(balEA1.sub(balEA2)).eq(amountA);
+      expect(balPL2.sub(balPL1)).eq(amountA);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, locationA, poolLocation, amountA);
+      await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, token2.address, exchangeRate, locationB);
+    });
+  });
+
+  describe("executeMarketOrder part 2", function () {
+    it("can execute market order from flag location external address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = totalSupply * 1000 + 2;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      //let pool = await nucleus.getGridOrderPool(poolID);
+      let tradeRequest = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      let mtLocationA = HydrogenNucleusHelper.internalAddressToLocation(user3.address);
+      let mtLocationB = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
+      let balNuA1 = await token1.balanceOf(nucleus.address);
+      let balNuB1 = await token2.balanceOf(nucleus.address);
+      let balPlA1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let balPlB1 = await nucleus.getTokenBalance(token2.address, poolLocation);
+      let balMtA1 = await nucleus.getTokenBalance(token1.address, mtLocationA);
+      let balMtB1 = await nucleus.getTokenBalance(token2.address, mtLocationB);
+      let balMmB1 = await nucleus.getTokenBalance(token2.address, tradeRequest.locationB);
+      let amountAMT = WeiPerEther.mul(7);
+      let { feePPM } = await nucleus.getSwapFeeForPair(token1.address, token2.address)
+      let { amountBMT, amountBMM } = HydrogenNucleusHelper.calculateMarketOrderExactAMT(amountAMT, tradeRequest.exchangeRate, feePPM);
+      expect(amountAMT).gt(0);
+      expect(amountBMT).gt(0);
+      expect(amountAMT).lte(balPlA1);
+      expect(amountBMT).lte(balMtB1);
+      let params = {
+        poolID: poolID,
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: amountAMT,
+        amountB: amountBMT,
+        locationA: mtLocationA,
+        locationB: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS,
+        flashSwapCallee: AddressZero,
+        callbackData: "0x"
+      };
+      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let balNuA2 = await token1.balanceOf(nucleus.address);
+      let balNuB2 = await token2.balanceOf(nucleus.address);
+      let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let balPlB2 = await nucleus.getTokenBalance(token2.address, poolLocation);
+      let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
+      let balMtB2 = await nucleus.getTokenBalance(token2.address, mtLocationB);
+      let balMmB2 = await nucleus.getTokenBalance(token2.address, tradeRequest.locationB);
+      expect(balNuA1.sub(balNuA2)).eq(0);
+      expect(balPlA1.sub(balPlA2)).eq(amountAMT);
+      expect(balMtA2.sub(balMtA1)).eq(amountAMT);
+      expect(balNuB2.sub(balNuB1)).eq(amountBMT);
+      expect(balPlB2.sub(balPlB1)).eq(amountBMM);
+      expect(balMtB1.sub(balMtB2)).eq(amountBMT);
+      expect(balMmB2.sub(balMmB1)).eq(amountBMM);
+      let tradeRequest2 = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest2.amountA).eq(tradeRequest.amountA.sub(amountAMT));
+      expect(tradeRequest2.exchangeRate).eq(tradeRequest.exchangeRate);
+      expect(tradeRequest2.locationB).eq(tradeRequest.locationB);
+      await expect(tx).to.not.emit(token1, "Transfer");
+      await expect(tx).to.emit(token2, "Transfer").withArgs(user2.address, nucleus.address, amountBMT);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, poolLocation, mtLocationA, amountAMT);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token2.address, mtLocationB, poolLocation, amountBMM);
+      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, token2.address, amountAMT, amountBMT, amountBMM);
+    });
+    it("can execute market order from flag location internal address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = totalSupply * 1000 + 2;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      //let pool = await nucleus.getGridOrderPool(poolID);
+      let tradeRequest = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      let mtLocationA = HydrogenNucleusHelper.internalAddressToLocation(user3.address);
+      let mtLocationB = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
+      let balNuA1 = await token1.balanceOf(nucleus.address);
+      let balNuB1 = await token2.balanceOf(nucleus.address);
+      let balPlA1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let balPlB1 = await nucleus.getTokenBalance(token2.address, poolLocation);
+      let balMtA1 = await nucleus.getTokenBalance(token1.address, mtLocationA);
+      let balMtB1 = await nucleus.getTokenBalance(token2.address, mtLocationB);
+      let balMmB1 = await nucleus.getTokenBalance(token2.address, tradeRequest.locationB);
+      let amountAMT = WeiPerEther.mul(7);
+      let { feePPM } = await nucleus.getSwapFeeForPair(token1.address, token2.address)
+      let { amountBMT, amountBMM } = HydrogenNucleusHelper.calculateMarketOrderExactAMT(amountAMT, tradeRequest.exchangeRate, feePPM);
+      expect(amountAMT).gt(0);
+      expect(amountBMT).gt(0);
+      expect(amountAMT).lte(balPlA1);
+      expect(amountBMT).lte(balMtB1);
+      let params = {
+        poolID: poolID,
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: amountAMT,
+        amountB: amountBMT,
+        locationA: mtLocationA,
+        locationB: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS,
+        flashSwapCallee: AddressZero,
+        callbackData: "0x"
+      };
+      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let balNuA2 = await token1.balanceOf(nucleus.address);
+      let balNuB2 = await token2.balanceOf(nucleus.address);
+      let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let balPlB2 = await nucleus.getTokenBalance(token2.address, poolLocation);
+      let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
+      let balMtB2 = await nucleus.getTokenBalance(token2.address, mtLocationB);
+      let balMmB2 = await nucleus.getTokenBalance(token2.address, tradeRequest.locationB);
+      expect(balNuA1.sub(balNuA2)).eq(0);
+      expect(balPlA1.sub(balPlA2)).eq(amountAMT);
+      expect(balMtA2.sub(balMtA1)).eq(amountAMT);
+      expect(balNuB2.sub(balNuB1)).eq(0);
+      expect(balPlB2.sub(balPlB1)).eq(amountBMM);
+      expect(balMtB1.sub(balMtB2)).eq(amountBMT);
+      expect(balMmB2.sub(balMmB1)).eq(amountBMM);
+      let tradeRequest2 = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest2.amountA).eq(tradeRequest.amountA.sub(amountAMT));
+      expect(tradeRequest2.exchangeRate).eq(tradeRequest.exchangeRate);
+      expect(tradeRequest2.locationB).eq(tradeRequest.locationB);
+      await expect(tx).to.not.emit(token1, "Transfer");
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, poolLocation, mtLocationA, amountAMT);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token2.address, mtLocationB, poolLocation, amountBMM);
+      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, token2.address, amountAMT, amountBMT, amountBMM);
+    });
+    it("can execute market order to flag location external address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = totalSupply * 1000 + 2;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      //let pool = await nucleus.getGridOrderPool(poolID);
+      let tradeRequest = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      let mtLocationA = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
+      let mtLocationB = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
+      let balNuA1 = await token1.balanceOf(nucleus.address);
+      let balNuB1 = await token2.balanceOf(nucleus.address);
+      let balPlA1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let balPlB1 = await nucleus.getTokenBalance(token2.address, poolLocation);
+      let balMtA1 = await nucleus.getTokenBalance(token1.address, mtLocationA);
+      let balMtB1 = await nucleus.getTokenBalance(token2.address, mtLocationB);
+      let balMmB1 = await nucleus.getTokenBalance(token2.address, tradeRequest.locationB);
+      let amountAMT = WeiPerEther.mul(7);
+      let { feePPM } = await nucleus.getSwapFeeForPair(token1.address, token2.address)
+      let { amountBMT, amountBMM } = HydrogenNucleusHelper.calculateMarketOrderExactAMT(amountAMT, tradeRequest.exchangeRate, feePPM);
+      expect(amountAMT).gt(0);
+      expect(amountBMT).gt(0);
+      expect(amountAMT).lte(balPlA1);
+      expect(amountBMT).lte(balMtB1);
+      let params = {
+        poolID: poolID,
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: amountAMT,
+        amountB: amountBMT,
+        locationA: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS,
+        locationB: mtLocationB,
+        flashSwapCallee: AddressZero,
+        callbackData: "0x"
+      };
+      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let balNuA2 = await token1.balanceOf(nucleus.address);
+      let balNuB2 = await token2.balanceOf(nucleus.address);
+      let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let balPlB2 = await nucleus.getTokenBalance(token2.address, poolLocation);
+      let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
+      let balMtB2 = await nucleus.getTokenBalance(token2.address, mtLocationB);
+      let balMmB2 = await nucleus.getTokenBalance(token2.address, tradeRequest.locationB);
+      expect(balNuA1.sub(balNuA2)).eq(amountAMT);
+      expect(balPlA1.sub(balPlA2)).eq(amountAMT);
+      expect(balMtA2.sub(balMtA1)).eq(amountAMT);
+      expect(balNuB2.sub(balNuB1)).eq(0);
+      expect(balPlB2.sub(balPlB1)).eq(amountBMM);
+      expect(balMtB1.sub(balMtB2)).eq(amountBMT);
+      expect(balMmB2.sub(balMmB1)).eq(amountBMM);
+      let tradeRequest2 = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest2.amountA).eq(tradeRequest.amountA.sub(amountAMT));
+      expect(tradeRequest2.exchangeRate).eq(tradeRequest.exchangeRate);
+      expect(tradeRequest2.locationB).eq(tradeRequest.locationB);
+      await expect(tx).to.emit(token1, "Transfer").withArgs(nucleus.address, user2.address, amountAMT);
+      await expect(tx).to.not.emit(token2, "Transfer");
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, poolLocation, mtLocationA, amountAMT);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token2.address, mtLocationB, poolLocation, amountBMM);
+      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, token2.address, amountAMT, amountBMT, amountBMM);
+    });
+    it("can execute market order from flag location internal address", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = totalSupply * 1000 + 2;
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+      //let pool = await nucleus.getGridOrderPool(poolID);
+      let tradeRequest = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      let mtLocationA = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
+      let mtLocationB = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
+      let balNuA1 = await token1.balanceOf(nucleus.address);
+      let balNuB1 = await token2.balanceOf(nucleus.address);
+      let balPlA1 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let balPlB1 = await nucleus.getTokenBalance(token2.address, poolLocation);
+      let balMtA1 = await nucleus.getTokenBalance(token1.address, mtLocationA);
+      let balMtB1 = await nucleus.getTokenBalance(token2.address, mtLocationB);
+      let balMmB1 = await nucleus.getTokenBalance(token2.address, tradeRequest.locationB);
+      let amountAMT = WeiPerEther.mul(7);
+      let { feePPM } = await nucleus.getSwapFeeForPair(token1.address, token2.address)
+      let { amountBMT, amountBMM } = HydrogenNucleusHelper.calculateMarketOrderExactAMT(amountAMT, tradeRequest.exchangeRate, feePPM);
+      expect(amountAMT).gt(0);
+      expect(amountBMT).gt(0);
+      expect(amountAMT).lte(balPlA1);
+      expect(amountBMT).lte(balMtB1);
+      let params = {
+        poolID: poolID,
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: amountAMT,
+        amountB: amountBMT,
+        locationA: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS,
+        locationB: mtLocationB,
+        flashSwapCallee: AddressZero,
+        callbackData: "0x"
+      };
+      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let balNuA2 = await token1.balanceOf(nucleus.address);
+      let balNuB2 = await token2.balanceOf(nucleus.address);
+      let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
+      let balPlB2 = await nucleus.getTokenBalance(token2.address, poolLocation);
+      let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
+      let balMtB2 = await nucleus.getTokenBalance(token2.address, mtLocationB);
+      let balMmB2 = await nucleus.getTokenBalance(token2.address, tradeRequest.locationB);
+      expect(balNuA1.sub(balNuA2)).eq(0);
+      expect(balPlA1.sub(balPlA2)).eq(amountAMT);
+      expect(balMtA2.sub(balMtA1)).eq(amountAMT);
+      expect(balNuB2.sub(balNuB1)).eq(amountBMT);
+      expect(balPlB2.sub(balPlB1)).eq(amountBMM);
+      expect(balMtB1.sub(balMtB2)).eq(amountBMT);
+      expect(balMmB2.sub(balMmB1)).eq(amountBMM);
+      let tradeRequest2 = await nucleus.getTradeRequest(poolID, token1.address, token2.address);
+      expect(tradeRequest2.amountA).eq(tradeRequest.amountA.sub(amountAMT));
+      expect(tradeRequest2.exchangeRate).eq(tradeRequest.exchangeRate);
+      expect(tradeRequest2.locationB).eq(tradeRequest.locationB);
+      await expect(tx).to.not.emit(token1, "Transfer");
+      await expect(tx).to.emit(token2, "Transfer").withArgs(user2.address, nucleus.address, amountBMT);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, poolLocation, mtLocationA, amountAMT);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token2.address, mtLocationB, poolLocation, amountBMM);
+      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, token2.address, amountAMT, amountBMT, amountBMM);
+    });
+    it("cannot execute market order from flag location pool", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = totalSupply * 1000 + 2;
+      await expect(nucleus.connect(user2).executeMarketOrder({
+        poolID: poolID,
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: 0,
+        amountB: 0,
+        locationA: HydrogenNucleusHelper.externalAddressToLocation(user2.address),
+        locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL,
+        flashSwapCallee: AddressZero,
+        callbackData: "0x"
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenMissingPoolContext");
+    });
+    it("cannot execute market order to flag location pool", async function () {
+      let totalSupply = (await nucleus.totalSupply()).toNumber();
+      let poolID = totalSupply * 1000 + 2;
+      await expect(nucleus.connect(user2).executeMarketOrder({
+        poolID: poolID,
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: 0,
+        amountB: 0,
+        locationA: HydrogenNucleusHelper.LOCATION_FLAG_POOL,
+        locationB: HydrogenNucleusHelper.externalAddressToLocation(user2.address),
+        flashSwapCallee: AddressZero,
+        callbackData: "0x"
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenMissingPoolContext");
+    });
+
+  });
+
+  describe("swap fees part 2", function () {
+    it("can set swap fees to flag location external address", async function () {
+      let tx = await nucleus.connect(owner).setSwapFeesForPairs([{
+        tokenA: token1.address,
+        tokenB: token2.address,
+        feePPM: 1000,
+        receiverLocation: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS
+      }]);
+      let fee1 = await nucleus.getSwapFeeForPair(token1.address, token2.address);
+      expect(fee1.feePPM).eq(1000);
+      expect(fee1.receiverLocation).eq(HydrogenNucleusHelper.externalAddressToLocation(owner.address));
+      let fee2 = await nucleus.getStoredSwapFeeForPair(token1.address, token2.address);
+      expect(fee2.feePPM).eq(1000);
+      expect(fee2.receiverLocation).eq(HydrogenNucleusHelper.externalAddressToLocation(owner.address));
+      await expect(tx).to.emit(nucleus, "SwapFeeSetForPair").withArgs(token1.address, token2.address, 1000, HydrogenNucleusHelper.externalAddressToLocation(owner.address));
+    });
+    it("can set swap fees to flag location internal address", async function () {
+      let tx = await nucleus.connect(owner).setSwapFeesForPairs([{
+        tokenA: token1.address,
+        tokenB: token2.address,
+        feePPM: 2000,
+        receiverLocation: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS
+      }]);
+      let fee1 = await nucleus.getSwapFeeForPair(token1.address, token2.address);
+      expect(fee1.feePPM).eq(2000);
+      expect(fee1.receiverLocation).eq(HydrogenNucleusHelper.internalAddressToLocation(owner.address));
+      let fee2 = await nucleus.getStoredSwapFeeForPair(token1.address, token2.address);
+      expect(fee2.feePPM).eq(2000);
+      expect(fee2.receiverLocation).eq(HydrogenNucleusHelper.internalAddressToLocation(owner.address));
+      await expect(tx).to.emit(nucleus, "SwapFeeSetForPair").withArgs(token1.address, token2.address, 2000, HydrogenNucleusHelper.internalAddressToLocation(owner.address));
+    });
+    it("cannot set swap fees to flag location pool", async function () {
+      await expect(nucleus.connect(owner).setSwapFeesForPairs([{
+        tokenA: token1.address,
+        tokenB: token2.address,
+        feePPM: 2000,
+        receiverLocation: HydrogenNucleusHelper.LOCATION_FLAG_POOL
+      }])).to.be.revertedWithCustomError(nucleus, "HydrogenMissingPoolContext");
+    });
+  });
+
+  describe("flash fees part 2", function () {
+    it("can set flash loan fees to flag location external address", async function () {
+      let tx = await nucleus.connect(owner).setFlashLoanFeesForTokens([{
+        token: token1.address,
+        feePPM: 1000,
+        receiverLocation: HydrogenNucleusHelper.LOCATION_FLAG_EXTERNAL_ADDRESS
+      }]);
+      let fee1 = await nucleus.getFlashLoanFeeForToken(token1.address);
+      expect(fee1.feePPM).eq(1000);
+      expect(fee1.receiverLocation).eq(HydrogenNucleusHelper.externalAddressToLocation(owner.address));
+      let fee2 = await nucleus.getStoredFlashLoanFeeForToken(token1.address);
+      expect(fee2.feePPM).eq(1000);
+      expect(fee2.receiverLocation).eq(HydrogenNucleusHelper.externalAddressToLocation(owner.address));
+      await expect(tx).to.emit(nucleus, "FlashLoanFeeSetForToken").withArgs(token1.address, 1000, HydrogenNucleusHelper.externalAddressToLocation(owner.address));
+    });
+    it("can set flash loan fees to flag location internal address", async function () {
+      let tx = await nucleus.connect(owner).setFlashLoanFeesForTokens([{
+        token: token1.address,
+        feePPM: 2000,
+        receiverLocation: HydrogenNucleusHelper.LOCATION_FLAG_INTERNAL_ADDRESS
+      }]);
+      let fee1 = await nucleus.getFlashLoanFeeForToken(token1.address);
+      expect(fee1.feePPM).eq(2000);
+      expect(fee1.receiverLocation).eq(HydrogenNucleusHelper.internalAddressToLocation(owner.address));
+      let fee2 = await nucleus.getStoredFlashLoanFeeForToken(token1.address);
+      expect(fee2.feePPM).eq(2000);
+      expect(fee2.receiverLocation).eq(HydrogenNucleusHelper.internalAddressToLocation(owner.address));
+      await expect(tx).to.emit(nucleus, "FlashLoanFeeSetForToken").withArgs(token1.address, 2000, HydrogenNucleusHelper.internalAddressToLocation(owner.address));
+    });
+    it("cannot set flash loan fees to flag location pool", async function () {
+      await expect(nucleus.connect(owner).setFlashLoanFeesForTokens([{
+        token: token1.address,
+        feePPM: 2000,
+        receiverLocation: HydrogenNucleusHelper.LOCATION_FLAG_POOL
+      }])).to.be.revertedWithCustomError(nucleus, "HydrogenMissingPoolContext");
     });
   });
 
@@ -3950,7 +5144,7 @@ describe("HydrogenNucleus-core", function () {
       await nucleus.connect(user1).approve(user2.address, 1001)
     });
     it("can fetch account balances", async function () {
-      let accounts:any = {nucleus, deployer, owner1, owner2, user1, user2, user3, user4, user5};
+      let accounts:any = {deployer, owner, user1, user2, user3, user4, user5};
       let accountNames = Object.keys(accounts);
       console.log("fetching account balances")
       const tokens:any = {token1, token2, token3}
@@ -3973,7 +5167,10 @@ describe("HydrogenNucleus-core", function () {
       let totalSupply = (await nucleus.totalSupply()).toNumber();
       let poolIDs = [];
       for(let i = 0; i < totalSupply; i++) {
-        poolIDs.push(await nucleus.tokenByIndex(i))
+        let poolID = (i+1)*1000 + 1;
+        if(await nucleus.exists(poolID)) poolIDs.push(poolID) // limit order
+        else poolIDs.push(poolID+1) // grid order
+        //poolIDs.push(await nucleus.tokenByIndex(i))
       }
       const tokens:any = {token1, token2, token3}
       const tokenNames = Object.keys(tokens);
@@ -3990,9 +5187,11 @@ describe("HydrogenNucleus-core", function () {
         }
       }
     });
+    /*
     it("can fetch and log pools", async function () {
       await HydrogenNucleusHelper.logPools(nucleus);
     });
+    */
     it("can fetch and parse events", async function () {
       let eventLogger = new HydrogenNucleusEventLogger(nucleus, provider, chainID);
       await eventLogger.fetchAndLogEvents()

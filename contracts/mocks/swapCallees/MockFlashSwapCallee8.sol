@@ -16,9 +16,9 @@ import { MockERC20 } from "./../tokens/MockERC20.sol";
  */
 contract MockFlashSwapCallee8 is IHydrogenFlashSwapCallee {
 
-    address public nucleus;
+    address payable public nucleus;
 
-    constructor(address nuc) {
+    constructor(address payable nuc) {
         nucleus = nuc;
     }
     function hydrogenNucleusFlashSwapCallback(FlashSwapCallbackParams memory) external override returns (bytes32 magicValue) {

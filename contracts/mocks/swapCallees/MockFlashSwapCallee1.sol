@@ -13,9 +13,9 @@ import { IHydrogenNucleus } from "./../../interfaces/IHydrogenNucleus.sol";
  */
 contract MockFlashSwapCallee1 {
 
-    address public nucleus;
+    address payable public nucleus;
 
-    constructor(address nuc) {
+    constructor(address payable nuc) {
         nucleus = nuc;
     }
 }

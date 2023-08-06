@@ -24,9 +24,8 @@ const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
 const WeiPerWbtc = BN.from(100_000_000); // 8 decimals
 const MAX_PPM = BN.from(1_000_000); // parts per million
 
-const LOCATION_THIS_POOL = "0x0000000000000000000000000000000000000000000000000000000000000001";
 const INVALID_LOCATION_0 = "0x0000000000000000000000000000000000000000000000000000000000000000";
-const INVALID_LOCATION_4 = "0x0400000000000000000000000000000000000000000000000000000000000000";
+const INVALID_LOCATION_6 = "0x0600000000000000000000000000000000000000000000000000000000000000";
 const INVALID_EXTERNAL_ADDRESS_LOCATION = "0x01ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 const INVALID_INTERNAL_ADDRESS_LOCATION = "0x02ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 const NULL_LOCATION = "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -341,12 +340,12 @@ describe("HydrogenNucleus Integration", function () {
           tokenA: usdc.address,
           tokenB: wbtc.address,
           exchangeRate: exchangeRateSellUsdcBuyWbtc,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: wbtc.address,
           tokenB: usdc.address,
           exchangeRate: exchangeRateSellWbtcBuyUsdc,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         }],
         hptReceiver: alice.address
       };
@@ -418,32 +417,32 @@ describe("HydrogenNucleus Integration", function () {
           tokenA: dai.address,
           tokenB: usdc.address,
           exchangeRate: exchangeRateSellDaiBuyUsdc,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: usdc.address,
           tokenB: dai.address,
           exchangeRate: exchangeRateSellUsdcBuyDai,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: dai.address,
           tokenB: usdt.address,
           exchangeRate: exchangeRateSellDaiBuyUsdt,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: usdt.address,
           tokenB: dai.address,
           exchangeRate: exchangeRateSellUsdtBuyDai,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: usdc.address,
           tokenB: usdt.address,
           exchangeRate: exchangeRateSellUsdcBuyUsdt,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
           tokenA: usdt.address,
           tokenB: usdc.address,
           exchangeRate: exchangeRateSellUsdtBuyUsdc,
-          locationB: LOCATION_THIS_POOL
+          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         }],
         hptReceiver: alice.address
       };

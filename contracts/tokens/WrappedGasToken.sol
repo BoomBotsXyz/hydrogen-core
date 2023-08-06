@@ -18,8 +18,8 @@
 
 pragma solidity 0.8.19;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "./../../interfaces/tokens/IWrappedGasToken.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IWrappedGasToken } from "./../interfaces/tokens/IWrappedGasToken.sol";
 
 /**
  * @title WrappedGasToken
@@ -39,7 +39,7 @@ contract WrappedGasToken is IWrappedGasToken, ERC20 {
     /**
      * @notice Wraps the gas token. **WGAS** will be minted to the sender at 1 **gas** : 1 **WGAS**.
      */
-    receive() external payable override {
+    receive () external payable override {
         deposit();
     }
 

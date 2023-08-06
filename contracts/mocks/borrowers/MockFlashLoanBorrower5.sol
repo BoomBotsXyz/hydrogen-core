@@ -16,12 +16,12 @@ contract MockFlashLoanBorrower5 is IERC3156FlashBorrower {
 
     event Callback();
 
-    address public nucleus;
+    address payable public nucleus;
 
     // keccak256("ERC3156FlashBorrower.onFlashLoan")
     bytes32 internal constant FLASH_LOAN_MAGIC_VALUE = 0x439148f0bbc682ca079e46d6e2c2f0c1e3b820f1a291b069d8882abf8cf18dd9;
 
-    constructor(address nuc) {
+    constructor(address payable nuc) {
         nucleus = nuc;
     }
 

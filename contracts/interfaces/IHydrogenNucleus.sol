@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: none
 pragma solidity 0.8.19;
 
-import { IERC721Enumerable } from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Enumerable.sol";
-
 
 /**
  * @title IHydrogenNucleus
  * @author Hysland Finance
- * @notice The entry point for all interactions with Hydrogen.
+ * @notice The main Hydrogen contract.
  */
-interface IHydrogenNucleus is IERC721Enumerable {
+interface IHydrogenNucleus {
 
     /***************************************
     EVENTS
     ***************************************/
 
+    /// @notice Emitted when `tokenId` token is transferred from `from` to `to`.
+    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    /// @notice Emitted when `owner` enables `approved` to manage the `tokenId` token.
+    event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
+    /// @notice Emitted when `owner` enables or disables (`approved`) `operator` to manage all of its assets.
+    event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
     /// @notice Emitted when tokens are transferred between locations.
     event TokensTransferred(address indexed token, bytes32 indexed from, bytes32 indexed to, uint256 amount);
     /// @notice Emitted when a pool is created.
@@ -27,10 +31,17 @@ interface IHydrogenNucleus is IERC721Enumerable {
     event SwapFeeSetForPair(address indexed tokenA, address indexed tokenB, uint256 feePPM, bytes32 receiverLocation);
     /// @notice Emitted when the flash loan fee for a token is set.
     event FlashLoanFeeSetForToken(address indexed token, uint256 feePPM, bytes32 receiverLocation);
+    /// @notice Emitted when the ownership transfer process is started.
+    event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
+    /// @notice Emitted when the ownership transfer process is completed.
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     /// @notice Emitted when the base URI is set.
     event BaseURISet(string baseURI);
     /// @notice Emitted when the contract URI is set.
     event ContractURISet(string contractURI);
+    /// @notice Emitted when the wrapped gas token is set.
+    event WrappedGasTokenSet(address indexed wgas);
+
 
     /***************************************
     STATE VARIABLES
@@ -60,44 +71,6 @@ interface IHydrogenNucleus is IERC721Enumerable {
     }
 
     /***************************************
-    POOL VIEW FUNCTIONS
-    ***************************************/
-
-    /**
-     * @notice Returns true if the pool exists.
-     * @param poolID The ID of the pool to query.
-     * @return status True if the pool exists, false otherwise.
-     */
-    function exists(uint256 poolID) external view returns (bool status);
-
-    /**
-     * @notice Returns the type of a pool.
-     * You can also check the last three digits of the poolID.
-     * @param poolID The ID of the pool to query.
-     * @return poolType The type of the pool.
-     */
-    function getPoolType(uint256 poolID) external view returns (uint256 poolType);
-
-    /**
-     * @notice Returns the exchange rate and output location of a trade request.
-     * @param poolID The ID of the pool to query.
-     * @param tokenA The tokenA of the trade request.
-     * @param tokenB The tokenB of the trade request.
-     * @return amountA The amount of tokenA that the pool can trade.
-     * @return exchangeRate The exchangeRate of the trade request.
-     * @return locationB The locationB of the trade request.
-     */
-    function getTradeRequest(
-        uint256 poolID,
-        address tokenA,
-        address tokenB
-    ) external view returns (
-        uint256 amountA,
-        bytes32 exchangeRate,
-        bytes32 locationB
-    );
-
-    /***************************************
     TOKEN FUNCTIONS
     ***************************************/
 
@@ -125,7 +98,78 @@ interface IHydrogenNucleus is IERC721Enumerable {
      */
     function tokenTransfer(
         TokenTransferParams calldata params
-    ) external;
+    ) external payable;
+
+    /***************************************
+    GAS TOKEN FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Returns the address of the wrapped gas token.
+     * @return _wgas The address of the wrapped gas token.
+     */
+    function wrappedGasToken() external view returns (address _wgas);
+
+    /**
+     * @notice Wraps the gas token into wrapped gas token.
+     * Wraps this contracts entire gas token balance.
+     * @param receiverLocation The location to receive the wrapped gas token.
+     */
+    function wrapGasToken(bytes32 receiverLocation) external payable;
+
+    /**
+     * @notice Unwraps some wrapped gas token into gas token.
+     * If `dst` is an external location type, transfers gas token.
+     * If `dst` is an internal location type, transfers wrapped gas token.
+     * @param amount The amount of gas token to unwrap.
+     * @param src The location to transfer the wrapped gas token from.
+     * @param dst The location to transfer the unwrapped gas token to.
+     */
+    function unwrapGasToken(uint256 amount, bytes32 src, bytes32 dst) external payable;
+
+    /**
+     * @notice Sets the address of the wrapped gas token.
+     * Can only be called by the contract owner.
+     * Can only be set once.
+     * @param wgas The address of the wrapped gas token.
+     */
+    function setWrappedGasToken(address wgas) external payable;
+
+    /**
+     * @notice Allows this contract to receive the gas token.
+     */
+    receive() external payable;
+
+    /***************************************
+    POOL VIEW FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Returns the type of a pool.
+     * You can also check the last three digits of the poolID.
+     * @param poolID The ID of the pool to query.
+     * @return poolType The type of the pool.
+     */
+    function getPoolType(uint256 poolID) external view returns (uint256 poolType);
+
+    /**
+     * @notice Returns the exchange rate and output location of a trade request.
+     * @param poolID The ID of the pool to query.
+     * @param tokenA The tokenA of the trade request.
+     * @param tokenB The tokenB of the trade request.
+     * @return amountA The amount of tokenA that the pool can trade.
+     * @return exchangeRate The exchangeRate of the trade request.
+     * @return locationB The locationB of the trade request.
+     */
+    function getTradeRequest(
+        uint256 poolID,
+        address tokenA,
+        address tokenB
+    ) external view returns (
+        uint256 amountA,
+        bytes32 exchangeRate,
+        bytes32 locationB
+    );
 
     /***************************************
     LIMIT ORDER FUNCTIONS
@@ -167,7 +211,7 @@ interface IHydrogenNucleus is IERC721Enumerable {
      */
     function createLimitOrderPool(
         CreateLimitOrderParams calldata params
-    ) external returns (
+    ) external payable returns (
         uint256 poolID
     );
 
@@ -183,7 +227,7 @@ interface IHydrogenNucleus is IERC721Enumerable {
      */
     function updateLimitOrderPool(
         UpdateLimitOrderParams calldata params
-    ) external;
+    ) external payable;
 
     /***************************************
     GRID ORDER FUNCTIONS
@@ -230,7 +274,7 @@ interface IHydrogenNucleus is IERC721Enumerable {
      */
     function createGridOrderPool(
         CreateGridOrderParams calldata params
-    ) external returns (
+    ) external payable returns (
         uint256 poolID
     );
 
@@ -246,7 +290,7 @@ interface IHydrogenNucleus is IERC721Enumerable {
      */
     function updateGridOrderPool(
         UpdateGridOrderPoolParams calldata params
-    ) external;
+    ) external payable;
 
     /***************************************
     MARKET ORDER FUNCTIONS
@@ -268,7 +312,144 @@ interface IHydrogenNucleus is IERC721Enumerable {
      * @notice Executes a market order.
      * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB, flashSwapCallee, callbackData.
      */
-    function executeMarketOrder(ExecuteMarketOrderParams calldata params) external;
+    function executeMarketOrder(ExecuteMarketOrderParams calldata params) external payable;
+
+    /***************************************
+    ERC721 FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Returns the total number of tokens stored by the contract.
+     * @return supply The total number of tokens that have been minted.
+     */
+    function totalSupply() external view returns (uint256 supply);
+
+    /**
+     * @notice Returns the number of tokens in `holder`'s account.
+     * @param holder The account to query.
+     * @return balance The account's balance.
+     */
+    function balanceOf(address holder) external view returns (uint256 balance);
+
+    /**
+     * @notice Returns the owner of the `poolID` token.
+     * Reverts if the token does not exist.
+     * @param poolID The ID of the pool to query.
+     * @return holder The owner of the token.
+     */
+    function ownerOf(uint256 poolID) external view returns (address holder);
+
+    /**
+     * @notice Returns true if the pool exists.
+     * @param poolID The ID of the pool to query.
+     * @return status True if the pool exists, false otherwise.
+     */
+    function exists(uint256 poolID) external view returns (bool status);
+
+    /**
+     * @notice Returns the account approved for `poolID` token.
+     * Reverts if the token does not exist.
+     * @param poolID The ID of the pool to query.
+     * @return operator The account approved for the specific token.
+     */
+    function getApproved(uint256 poolID) external view returns (address operator);
+
+    /**
+     * @notice Returns if the `operator` is allowed to manage all of the assets of `owner`.
+     * @param holder The holder account to query.
+     * @param operator The operator account to query.
+     * @return isApproved True if operator is approved, false otherwise.
+     */
+    function isApprovedForAll(address holder, address operator) external view returns (bool isApproved);
+
+    /**
+     * @notice Gives permission to `to` to transfer `poolID` pool to another account.
+     * @param to The account to give approval to.
+     * @param poolID The pool to approve.
+     */
+    function approve(address to, uint256 poolID) external payable;
+
+    /**
+     * @notice Approve or remove `operator` as an operator for the caller.
+     * @param operator The account to manage approval for.
+     * @param approved True to grant approval, false to revoke.
+     */
+    function setApprovalForAll(address operator, bool approved) external payable;
+
+    /**
+     * @notice Transfers `poolID` token from `from` to `to`.
+     * @param from The account to transfer the token from.
+     * @param to The account to transfer the pool to.
+     * @param poolID The ID of the pool to transfer.
+     */
+    function transferFrom(address from, address to, uint256 poolID) external payable;
+
+    /**
+     * @notice Transfers `poolID` token from `from` to `to`.
+     * @param from The account to transfer the token from.
+     * @param to The account to transfer the pool to.
+     * @param poolID The ID of the pool to transfer.
+     */
+    function safeTransferFrom(address from, address to, uint256 poolID) external payable;
+
+    /**
+     * @notice Transfers `poolID` token from `from` to `to`.
+     * @param from The account to transfer the token from.
+     * @param to The account to transfer the pool to.
+     * @param poolID The ID of the pool to transfer.
+     * @param data Arbitrary data to be passed to `to`.
+     */
+    function safeTransferFrom(address from, address to, uint256 poolID, bytes memory data) external payable;
+
+    /***************************************
+    MULTICALL FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Receives and executes a batch of function calls on this contract.
+     * @param data The batch of function calls.
+     * @return results The batch of results.
+     */
+    function multicall(bytes[] calldata data) external payable returns (bytes[] memory results);
+
+    /***************************************
+    ERC2612 FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Sets the amount of an `ERC20` token that this contract is allowed to transfer from `holder` using `EIP2612`.
+     * @param holder The account to approve tokens.
+     * @param token The address of the token to permit.
+     * @param amount The amount of the token to permit.
+     * @param deadline The timestamp that the transaction must go through before.
+     * @param v secp256k1 signature
+     * @param r secp256k1 signature
+     * @param s secp256k1 signature
+     */
+    function erc2612Permit(address holder, address token, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external payable;
+
+    /**
+     * @notice Sets the amount of an `ERC20` token that this contract is allowed to transfer from `holder` using a modified version of `EIP2612`.
+     * @param holder The account to approve tokens.
+     * @param token The address of the token to permit.
+     * @param amount The amount of the token to permit.
+     * @param deadline The timestamp that the transaction must go through before.
+     * @param signature secp256k1 signature
+     */
+    function erc2612Permit(address holder, address token, uint256 amount, uint256 deadline, bytes calldata signature) external payable;
+
+    /**
+     * @notice Sets the amount of an `ERC20` token that this contract is allowed to transfer from `holder` using an old version of `EIP2612`.
+     * @param holder The account to approve tokens.
+     * @param token The address of the token to permit.
+     * @param nonce Deduplicates permit transactions.
+     * @param expiry The timestamp that the transaction must go through before.
+     * @param allowed True to allow all, false to allow zero.
+     * @param v secp256k1 signature
+     * @param r secp256k1 signature
+     * @param s secp256k1 signature
+     */
+    function erc2612Permit(address holder, address token, uint256 nonce, uint256 expiry, bool allowed, uint8 v, bytes32 r, bytes32 s) external payable;
 
     /***************************************
     SWAP FEE FUNCTIONS
@@ -316,7 +497,7 @@ interface IHydrogenNucleus is IERC721Enumerable {
      * @notice Sets the swap fee for multiple pairs.
      * @param params tokenA, tokenB, feePPM, receiverLocation.
      */
-    function setSwapFeesForPairs(SetSwapFeeForPairParam[] calldata params) external;
+    function setSwapFeesForPairs(SetSwapFeeForPairParam[] calldata params) external payable;
 
     /***************************************
     FLASH LOAN FUNCTIONS
@@ -355,7 +536,7 @@ interface IHydrogenNucleus is IERC721Enumerable {
         address token,
         uint256 amount,
         bytes calldata data
-    ) external returns (bool status);
+    ) external payable returns (bool status);
 
     /**
      * @notice Gets the flash loan fee for a token.
@@ -395,11 +576,41 @@ interface IHydrogenNucleus is IERC721Enumerable {
      * @notice Sets the flash loan fee for multiple tokens.
      * @param params token, feePPM, receiverLocation.
      */
-    function setFlashLoanFeesForTokens(SetFlashLoanFeeForTokenParam[] calldata params) external;
+    function setFlashLoanFeesForTokens(SetFlashLoanFeeForTokenParam[] calldata params) external payable;
 
     /***************************************
-    URI FUNCTIONS
+    REENTRANCY GUARD FUNCTIONS
     ***************************************/
+
+    /**
+     * @notice Returns the stored state of reentrancy guard.
+     * @return rgState The current state.
+     */
+    function reentrancyGuardState() external view returns (uint256 rgState);
+
+    /***************************************
+    METADATA FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice A descriptive name for a collection of NFTs in this contract.
+     * @return name_ The NFT name.
+     */
+    function name() external view returns (string memory name_);
+
+    /**
+     * @notice An abbreviated name for NFTs in this contract.
+     * @return symbol_ The NFT symbol.
+     */
+    function symbol() external view returns (string memory symbol_);
+
+    /**
+     * @notice Returns the Uniform Resource Identifier (URI) for `poolID` token.
+     * Reverts if the token does not exist.
+     * @param poolID The ID of the pool to query.
+     * @return uri The token uri.
+     */
+    function tokenURI(uint256 poolID) external view returns (string memory uri);
 
     /**
      * @notice Returns the base URI for computing tokenURI.
@@ -411,7 +622,7 @@ interface IHydrogenNucleus is IERC721Enumerable {
      * @notice Sets the base URI for computing tokenURI.
      * @param uri The new base URI.
      */
-    function setBaseURI(string calldata uri) external;
+    function setBaseURI(string calldata uri) external payable;
 
     /**
      * @notice Returns the contract URI.
@@ -423,5 +634,47 @@ interface IHydrogenNucleus is IERC721Enumerable {
      * @notice Sets the contract URI.
      * @param uri The new contract URI.
      */
-    function setContractURI(string calldata uri) external;
+    function setContractURI(string calldata uri) external payable;
+
+    /**
+     * @notice Returns true if this contract implements the interface defined by `interfaceId`.
+     * @param interfaceId The id of the interface to query.
+     * @return status True if supported, false otherwise.
+     */
+    function supportsInterface(bytes4 interfaceId) external view returns (bool status);
+
+    /***************************************
+    OWNER FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Returns the address of the current owner.
+     * @return contractOwner The address of the contract owner.
+     */
+    function owner() external view returns (address contractOwner);
+
+    /**
+     * @notice Returns the address of the pending owner.
+     * @return pendingContractOwner The address of the pending contract owner.
+     */
+    function pendingOwner() external view returns (address pendingContractOwner);
+
+    /**
+     * @notice Starts the ownership transfer of the contract to a new account. Replaces the pending transfer if there is one. The transfer will not be finalized until the new owner calls `acceptOwnership()`.
+     * Can only be called by the current owner.
+     * @param newOwner The new owner of the contract.
+     */
+    function transferOwnership(address newOwner) external payable;
+
+    /**
+     * @notice The new owner accepts the ownership transfer.
+     * Can only be called by the new owner.
+     */
+    function acceptOwnership() external payable;
+
+    /**
+     * @notice Leaves the contract without owner. It will not be possible to call `onlyOwner` functions anymore.
+     * Can only be called by the current owner.
+     */
+    function renounceOwnership() external payable;
 }

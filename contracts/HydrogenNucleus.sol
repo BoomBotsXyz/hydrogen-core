@@ -2,10 +2,8 @@
 pragma solidity 0.8.19;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import { ERC721Enumerable } from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
-import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { Address } from "@openzeppelin/contracts/utils/Address.sol";
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { ExchangeRateMath } from "./libraries/ExchangeRateMath.sol";
 import { Locations } from "./libraries/Locations.sol";
 import { Pools } from "./libraries/Pools.sol";
@@ -13,20 +11,41 @@ import { Errors } from "./libraries/Errors.sol";
 import { IHydrogenNucleus } from "./interfaces/IHydrogenNucleus.sol";
 import { IHydrogenFlashSwapCallee } from "./interfaces/IHydrogenFlashSwapCallee.sol";
 import { IERC3156FlashBorrower } from "./interfaces/IERC3156FlashBorrower.sol";
-import { ERC2612Permitter } from "./utils/ERC2612Permitter.sol";
-import { Multicall } from "./utils/Multicall.sol";
+import { IERC721Receiver } from "./interfaces/IERC721Receiver.sol";
+import { IWrappedGasToken } from "./interfaces/tokens/IWrappedGasToken.sol";
+import { IERC20PermitA } from "./interfaces/tokens/IERC20PermitA.sol";
+import { IERC20PermitB } from "./interfaces/tokens/IERC20PermitB.sol";
+import { IERC20PermitC } from "./interfaces/tokens/IERC20PermitC.sol";
 
 
 /**
  * @title HydrogenNucleus
  * @author Hysland Finance
- * @notice The entry point for all interactions with Hydrogen.
+ * @notice The main Hydrogen contract.
  */
-contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownable2Step, ERC2612Permitter {
+// solhint-disable max-states-count
+contract HydrogenNucleus is IHydrogenNucleus {
 
     /***************************************
     STATE VARIABLES
     ***************************************/
+
+    // erc721 data
+
+    // num tokens minted
+    uint256 internal _totalSupply;
+    // token name
+    string internal _name;
+    // token symbol
+    string internal _symbol;
+    // token ID => owner address
+    mapping(uint256 => address) internal _owners;
+    // owner address => token count
+    mapping(address => uint256) internal _balances;
+    // token ID => approved address
+    mapping(uint256 => address) internal _tokenApprovals;
+    // owner => operator approvals
+    mapping(address => mapping(address => bool)) internal _operatorApprovals;
 
     // token internal balances
 
@@ -61,6 +80,28 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
     bytes32 internal constant FLASH_SWAP_MAGIC_VALUE = 0xef2ee65b98afb6a6fa41b62a72b172b3afcdaf4f76c0775c113b8d60c55085ac;
     // keccak256("ERC3156FlashBorrower.onFlashLoan")
     bytes32 internal constant FLASH_LOAN_MAGIC_VALUE = 0x439148f0bbc682ca079e46d6e2c2f0c1e3b820f1a291b069d8882abf8cf18dd9;
+    // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
+    bytes4 internal constant ON_ERC721_RECEIVED_MAGIC_VALUE = 0x150b7a02;
+
+    // contract owner
+
+    // owner
+    address internal _owner;
+    // pending owner (2 step)
+    address internal _pendingOwner;
+
+    // reentrancy guard
+
+    // current state
+    uint256 internal _reentrancyGuardState;
+    // allow entrance
+    uint256 internal constant ENTERABLE = 1;
+    // deny entrance
+    uint256 internal constant NOT_ENTERABLE = 2;
+
+    // wrapped gas token
+
+    address internal _wrappedGasToken;
 
     // uri data
 
@@ -73,10 +114,12 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
 
     /**
      * @notice Constructs the HydrogenNucleus contract.
-     * @param owner The initial owner of the contract.
+     * @param contractOwner The initial owner of the contract.
      */
-    constructor(address owner) ERC721("Hydrogen Pool Token", "HPT") {
-        _transferOwnership(owner);
+    constructor(address contractOwner) {
+        _owner = contractOwner;
+        emit OwnershipTransferred(address(0), contractOwner);
+        _reentrancyGuardState = ENTERABLE;
     }
 
     /***************************************
@@ -93,7 +136,9 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         address token,
         bytes32 location
     ) external view override returns (uint256 balance) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         if(token == address(this)) revert Errors.HydrogenSelfReferrence();
+        location = _validateOrTransformLocation(location);
         bytes32 locationType = Locations.getLocationType(location);
         if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
             address account = Locations.locationToAddress(location);
@@ -101,11 +146,9 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         } else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
             address account = Locations.locationToAddress(location);
             return _tokenInternalBalanceOfAccount[token][account];
-        } else if(locationType == Locations.LOCATION_TYPE_POOL) {
+        } else {
             uint256 poolID = Locations.locationToPoolID(location);
             return _tokenInternalBalanceOfPool[token][poolID];
-        } else {
-            revert Errors.HydrogenInvalidLocationType();
         }
     }
 
@@ -115,26 +158,109 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      */
     function tokenTransfer(
         TokenTransferParams calldata params
-    ) external override {
+    ) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
         if(params.token == address(this)) revert Errors.HydrogenSelfReferrence();
-        Locations.validateLocation(params.src);
-        Locations.validateLocation(params.dst);
-        _validateLocationTransferFromAuthorization(params.src);
-        _performTokenTransfer(params.token, params.amount, params.src, params.dst);
+        bytes32 src = _validateOrTransformLocation(params.src);
+        bytes32 dst = _validateOrTransformLocation(params.dst);
+        _validateLocationTransferFromAuthorization(src);
+        _performTokenTransfer(params.token, params.amount, src, dst);
+        _reentrancyGuardState = ENTERABLE;
     }
+
+    /***************************************
+    GAS TOKEN FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Returns the address of the wrapped gas token.
+     * @return _wgas The address of the wrapped gas token.
+     */
+    function wrappedGasToken() external view override returns (address _wgas) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        return _wrappedGasToken;
+    }
+
+    /**
+     * @notice Wraps the gas token into the wrapped gas token.
+     * Wraps this contracts entire gas token balance.
+     * @param receiverLocation The location to receive the wrapped gas token.
+     */
+    function wrapGasToken(bytes32 receiverLocation) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        address wgas = _wrappedGasToken;
+        if(wgas == address(0)) revert Errors.HydrogenWrappedGasTokenNotSet();
+        uint256 amount = address(this).balance;
+        IWrappedGasToken(payable(wgas)).deposit{value:amount}();
+        _performTokenTransferTo(wgas, amount, receiverLocation);
+        emit TokensTransferred(wgas, Locations.externalAddressToLocation(msg.sender), receiverLocation, amount);
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Unwraps some the wrapped gas token.
+     * If `dst` is an external location type, transfers gas token.
+     * If `dst` is an internal location type, transfers wrapped gas token.
+     * @param amount The amount of gas token to unwrap.
+     * @param src The location to transfer the wrapped gas token from.
+     * @param dst The location to transfer the unwrapped gas token to.
+     */
+    function unwrapGasToken(uint256 amount, bytes32 src, bytes32 dst) external payable override {
+        // checks
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        address wgas = _wrappedGasToken;
+        if(wgas == address(0)) revert Errors.HydrogenWrappedGasTokenNotSet();
+        src = _validateOrTransformLocation(src);
+        dst = _validateOrTransformLocation(dst);
+        _validateLocationTransferFromAuthorization(src);
+        // pull wgas
+        _performTokenTransferFrom(wgas, amount, src);
+        // send gas
+        bytes32 locationType = Locations.getLocationType(dst);
+        // if transferring to an external address
+        if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
+            // unwrap and transfer
+            address account = Locations.locationToAddress(dst);
+            if(account == wgas) revert Errors.HydrogenInvalidTransferToWgas();
+            IWrappedGasToken(payable(wgas)).withdraw(amount);
+            _transferGasToken(account, amount);
+        }
+        // if transfering to an internal address or pool
+        else {
+            // do not unwrap. transfer as wrapped
+            _performTokenTransferTo(wgas, amount, dst);
+        }
+        emit TokensTransferred(wgas, src, dst, amount);
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Sets the address of the wrapped gas token.
+     * Can only be called by the contract owner.
+     * Can only be set once.
+     * @param wgas The address of the wrapped gas token.
+     */
+    function setWrappedGasToken(address wgas) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        if(msg.sender != _owner) revert Errors.HydrogenNotContractOwner();
+        if(_wrappedGasToken != address(0)) revert Errors.HydrogenWrappedGasTokenAlreadySet();
+        if(wgas == address(0)) revert Errors.HydrogenAddressZero();
+        _wrappedGasToken = wgas;
+        emit WrappedGasTokenSet(wgas);
+    }
+
+    /**
+     * @notice Allows this contract to receive the gas token.
+     */
+    // solhint-disable-next-line no-empty-blocks
+    receive() external payable override {}
 
     /***************************************
     POOL VIEW FUNCTIONS
     ***************************************/
-
-    /**
-     * @notice Returns true if the pool exists.
-     * @param poolID The ID of the pool to query.
-     * @return status True if the pool exists, false otherwise.
-     */
-    function exists(uint256 poolID) external view override returns (bool status) {
-        return _exists(poolID);
-    }
 
     /**
      * @notice Returns the type of a pool.
@@ -143,6 +269,7 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      * @return poolType The type of the pool.
      */
     function getPoolType(uint256 poolID) external view override returns (uint256 poolType) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
         return (poolID % Pools.POOL_ID_DECIMAL_OFFSET);
     }
@@ -166,22 +293,28 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         bytes32 exchangeRate,
         bytes32 locationB
     ) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
+        // if the pool exists, it must be either a limit order or a grid order
         uint256 poolType = Pools.getPoolType(poolID);
         amountA = _tokenInternalBalanceOfPool[tokenA][poolID];
+        // if is limit order
         if(poolType == Pools.LIMIT_ORDER_POOL_TYPE) {
             LimitOrderPoolData storage poolData = _limitOrderPoolData[poolID];
+            // if match
             if( (poolData.tokenA == tokenA) && (poolData.tokenB == tokenB) ) {
                 return (amountA, poolData.exchangeRate, poolData.locationB);
-            } else {
+            }
+            // if mismatch
+            else {
                 return (amountA, bytes32(0), bytes32(0));
             }
-        } else if(poolType == Pools.GRID_ORDER_POOL_TYPE) {
+        }
+        // if is grid order
+        else {
             GridOrderPoolData storage poolData = _gridOrderPoolData[poolID];
             exchangeRate = poolData.tokenPairToExchangeRate[tokenA][tokenB];
             return(amountA, exchangeRate, poolData.tokenPairToLocation[tokenA][tokenB]);
-        } else {
-            revert Errors.HydrogenUnknownPoolType(); // dev: branch should never hit
         }
     }
 
@@ -207,8 +340,11 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         bytes32 exchangeRate,
         bytes32 locationB
     ) {
+        // checks
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
         if(!Pools.isLimitOrderPool(poolID)) revert Errors.HydrogenNotALimitOrderPool();
+        // return
         LimitOrderPoolData memory poolData = _limitOrderPoolData[poolID];
         return (
             poolData.tokenA,
@@ -226,16 +362,18 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      */
     function createLimitOrderPool(
         CreateLimitOrderParams calldata params
-    ) external override returns (
+    ) external payable override returns (
         uint256 poolID
     ) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
         // verify params
-        Locations.validateLocation(params.locationA);
-        _validateLocationTransferFromAuthorization(params.locationA);
+        bytes32 locationA = _validateOrTransformLocation(params.locationA);
+        _validateLocationTransferFromAuthorization(locationA);
         if(params.tokenA == params.tokenB) revert Errors.HydrogenSameToken();
         if((params.tokenA == address(this)) || params.tokenB == address(this)) revert Errors.HydrogenSelfReferrence();
         // calculate poolID
-        uint256 poolIndex = totalSupply() + 1;
+        uint256 poolIndex = ++_totalSupply;
         poolID = (poolIndex * Pools.POOL_ID_DECIMAL_OFFSET) + Pools.LIMIT_ORDER_POOL_TYPE;
         if(poolID > uint256(Locations.MASK_POOL_ID)) revert Errors.HydrogenMaxPoolCount();
         // mint pool token
@@ -244,10 +382,10 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         // store pool data
         bytes32 poolLocation = Locations.poolIDtoLocation(poolID);
         bytes32 locationB = params.locationB;
-        if(locationB == Locations.LOCATION_THIS_POOL) {
+        if(locationB == Locations.LOCATION_FLAG_POOL) {
             locationB = poolLocation;
         } else {
-            Locations.validateLocation(locationB);
+            locationB = _validateOrTransformLocation(locationB);
         }
         _limitOrderPoolData[poolID] = LimitOrderPoolData({
             tokenA: params.tokenA,
@@ -256,9 +394,10 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
             locationB: locationB
         });
         // transfer tokens into pool
-        _performTokenTransfer(params.tokenA, params.amountA, params.locationA, poolLocation);
+        _performTokenTransfer(params.tokenA, params.amountA, locationA, poolLocation);
         // events
         emit TradeRequestUpdated(poolID, params.tokenA, params.tokenB, params.exchangeRate, locationB);
+        _reentrancyGuardState = ENTERABLE;
     }
 
     /**
@@ -267,17 +406,18 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      */
     function updateLimitOrderPool(
         UpdateLimitOrderParams calldata params
-    ) external override {
-        uint256 poolID = params.poolID;
+    ) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         // checks
+        uint256 poolID = params.poolID;
         if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
-        if(ownerOf(poolID) != msg.sender) revert Errors.HydrogenUpdatePoolNotOwnedByMsgSender();
+        if(_ownerOf(poolID) != msg.sender) revert Errors.HydrogenNotPoolOwner();
         if(!Pools.isLimitOrderPool(poolID)) revert Errors.HydrogenNotALimitOrderPool();
         bytes32 locationB = params.locationB;
-        if(locationB == Locations.LOCATION_THIS_POOL) {
+        if(locationB == Locations.LOCATION_FLAG_POOL) {
             locationB = Locations.poolIDtoLocation(poolID);
         } else {
-            Locations.validateLocation(locationB);
+            locationB = _validateOrTransformLocation(locationB);
         }
         // store data
         LimitOrderPoolData storage poolData = _limitOrderPoolData[poolID];
@@ -304,8 +444,11 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         uint256[] memory balances,
         TradeRequest[] memory tradeRequests
     ) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        // checks
         if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
         if(!Pools.isGridOrderPool(poolID)) revert Errors.HydrogenNotAGridOrderPool();
+        // return data
         GridOrderPoolData storage poolData = _gridOrderPoolData[poolID];
         uint256 tokensLength = poolData.numTokensInPool;
         uint256 requestsLength = (tokensLength <= 1) ? 0 : (tokensLength*(tokensLength-1));
@@ -338,11 +481,13 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      */
     function createGridOrderPool(
         CreateGridOrderParams calldata params
-    ) external returns (
+    ) external payable override returns (
         uint256 poolID
     ) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
         // calculate poolID
-        uint256 poolIndex = totalSupply() + 1;
+        uint256 poolIndex = ++_totalSupply;
         poolID = (poolIndex * Pools.POOL_ID_DECIMAL_OFFSET) + Pools.GRID_ORDER_POOL_TYPE;
         if(poolID > uint256(Locations.MASK_POOL_ID)) revert Errors.HydrogenMaxPoolCount();
         // mint pool token
@@ -350,6 +495,7 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         _mint(params.hptReceiver, poolID);
         // store pool data
         _updateGridOrderPool(poolID, params.tokenSources, params.tradeRequests);
+        _reentrancyGuardState = ENTERABLE;
     }
 
     /**
@@ -358,13 +504,16 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      */
     function updateGridOrderPool(
         UpdateGridOrderPoolParams calldata params
-    ) external {
+    ) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
         // checks
         if(!_exists(params.poolID)) revert Errors.HydrogenPoolDoesNotExist();
-        if(ownerOf(params.poolID) != msg.sender) revert Errors.HydrogenUpdatePoolNotOwnedByMsgSender();
+        if(_ownerOf(params.poolID) != msg.sender) revert Errors.HydrogenNotPoolOwner();
         if(!Pools.isGridOrderPool(params.poolID)) revert Errors.HydrogenNotAGridOrderPool();
         // store pool data
         _updateGridOrderPool(params.poolID, params.tokenSources, params.tradeRequests);
+        _reentrancyGuardState = ENTERABLE;
     }
 
     /***************************************
@@ -375,18 +524,20 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      * @notice Executes a market order.
      * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB, flashSwapCallee, callbackData.
      */
-    function executeMarketOrder(ExecuteMarketOrderParams calldata params) external override {
+    function executeMarketOrder(ExecuteMarketOrderParams calldata params) external payable override {
+        // reentrancy guard enter
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
         // checks
-        Locations.validateLocation(params.locationA);
-        Locations.validateLocation(params.locationB);
-        _validateLocationNotThis(params.locationA);
-        _validateLocationTransferFromAuthorization(params.locationB);
+        bytes32 locationA = _validateOrTransformLocation(params.locationA);
+        bytes32 locationB = _validateOrTransformLocation(params.locationB);
+        _validateLocationTransferFromAuthorization(locationB);
         bytes32 poolLocation = Locations.poolIDtoLocation(params.poolID);
-        if((params.locationA == poolLocation) || (params.locationB == poolLocation)) revert Errors.HydrogenPoolCannotTradeAgainstItself();
+        if((locationA == poolLocation) || (locationB == poolLocation)) revert Errors.HydrogenPoolCannotTradeAgainstItself();
 
         // math
         (bytes32 exchangeRate, bytes32 poolLocationB) = _getTradeRequest(params.poolID, params.tokenA, params.tokenB);
-        (uint256 feePPM, bytes32 feeReceiver) = getSwapFeeForPair(params.tokenA, params.tokenB);
+        (uint256 feePPM, bytes32 feeReceiver) = _getSwapFeeForPair(params.tokenA, params.tokenB);
         uint256 amountBToFeeReceiver = (params.amountB * feePPM) / MAX_PPM;
         uint256 amountBToPool = params.amountB - amountBToFeeReceiver;
         if(!ExchangeRateMath.isMarketOrderAcceptable(params.amountA, amountBToPool, exchangeRate)) revert Errors.HydrogenExchangeRateDisagreement();
@@ -395,9 +546,12 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
 
         // effects
         // transfer tokenA from pool to market taker
-        _performTokenTransfer(params.tokenA, params.amountA, poolLocation, params.locationA);
+        _performTokenTransfer(params.tokenA, params.amountA, poolLocation, locationA);
         // optional callback
         if(params.flashSwapCallee != address(0)) {
+            // reentrancy guard hand over control
+            _reentrancyGuardState = ENTERABLE;
+            // callback
             if(IHydrogenFlashSwapCallee(params.flashSwapCallee).hydrogenNucleusFlashSwapCallback(
                 IHydrogenFlashSwapCallee.FlashSwapCallbackParams({
                     initiator: msg.sender,
@@ -405,19 +559,22 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
                     tokenB: params.tokenB,
                     amountA: params.amountA,
                     amountB: params.amountB,
-                    locationA: params.locationA,
-                    locationB: params.locationB,
+                    locationA: locationA,
+                    locationB: locationB,
                     callbackData: params.callbackData
                 })
             ) != FLASH_SWAP_MAGIC_VALUE) revert Errors.HydrogenFlashSwapCallbackFailed();
+            // reentrancy guard take back control
+            _reentrancyGuardState = NOT_ENTERABLE;
         }
-        // double check authorization
-        _validateLocationTransferFromAuthorization(params.locationB);
+        // double check authorization in case pool transferred
+        //_validateLocationTransferFromAuthorization(params.locationB);
+        _validateLocationTransferFromAuthorization(locationB);
         // transfer tokenB from market taker
-        _performTokenTransferFrom(params.tokenB, params.amountB, params.locationB);
+        _performTokenTransferFrom(params.tokenB, params.amountB, locationB);
         // transfer tokenB to pool
         _performTokenTransferTo(params.tokenB, amountBToPool, poolLocation);
-        emit TokensTransferred(params.tokenB, params.locationB, poolLocation, amountBToPool);
+        emit TokensTransferred(params.tokenB, locationB, poolLocation, amountBToPool);
         // transfer tokenB from pool to market maker
         if(poolLocation != poolLocationB) {
             _performTokenTransfer(params.tokenB, amountBToPool, poolLocation, poolLocationB);
@@ -425,11 +582,210 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         // transfer tokenB to fee receiver
         if(amountBToFeeReceiver > 0) {
             _performTokenTransferTo(params.tokenB, amountBToFeeReceiver, feeReceiver);
-            emit TokensTransferred(params.tokenB, params.locationB, feeReceiver, amountBToFeeReceiver);
+            emit TokensTransferred(params.tokenB, locationB, feeReceiver, amountBToFeeReceiver);
         }
 
         // emit event
         emit MarketOrderExecuted(params.poolID, params.tokenA, params.tokenB, params.amountA, params.amountB, amountBToPool);
+        // reentrancy guard exit
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /***************************************
+    ERC721 FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Returns the total number of tokens stored by the contract.
+     * @return supply The total number of tokens that have been minted.
+     */
+    function totalSupply() external view returns (uint256 supply) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        return _totalSupply;
+    }
+
+    /**
+     * @notice Returns the number of tokens in `holder`'s account.
+     * @param holder The account to query.
+     * @return balance The account's balance.
+     */
+    function balanceOf(address holder) external view override returns (uint256 balance) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        if(holder == address(0)) revert Errors.HydrogenAddressZero();
+        return _balances[holder];
+    }
+
+    /**
+     * @notice Returns the owner of the `poolID` token.
+     * Reverts if the token does not exist.
+     * @param poolID The ID of the pool to query.
+     * @return holder The owner of the token.
+     */
+    function ownerOf(uint256 poolID) external view override returns (address holder) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        holder = _owners[poolID];
+        if(holder == address(0)) revert Errors.HydrogenPoolDoesNotExist();
+        return holder;
+    }
+
+    /**
+     * @notice Returns true if the pool exists.
+     * @param poolID The ID of the pool to query.
+     * @return status True if the pool exists, false otherwise.
+     */
+    function exists(uint256 poolID) external view override returns (bool status) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        return _exists(poolID);
+    }
+
+    /**
+     * @notice Returns the account approved for `poolID` token.
+     * Reverts if the token does not exist.
+     * @param poolID The ID of the pool to query.
+     * @return operator The account approved for the specific token.
+     */
+    function getApproved(uint256 poolID) external view override returns (address operator) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        return _getApproved(poolID);
+    }
+
+    /**
+     * @notice Returns if the `operator` is allowed to manage all of the assets of `owner`.
+     * @param holder The holder account to query.
+     * @param operator The operator account to query.
+     * @return isApproved True if operator is approved, false otherwise.
+     */
+    function isApprovedForAll(address holder, address operator) external view override returns (bool isApproved) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        return _isApprovedForAll(holder, operator);
+    }
+
+    /**
+     * @notice Gives permission to `to` to transfer `poolID` pool to another account.
+     * @param to The account to give approval to.
+     * @param poolID The pool to approve.
+     */
+    function approve(address to, uint256 poolID) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        address holder = _ownerOf(poolID);
+        if(!(msg.sender == holder || _isApprovedForAll(holder, msg.sender))) revert Errors.HydrogenNotPoolOwnerOrOperator();
+        if(to == holder) revert Errors.HydrogenApprovePoolToOwner();
+        _tokenApprovals[poolID] = to;
+        emit Approval(holder, to, poolID);
+    }
+
+    /**
+     * @notice Approve or remove `operator` as an operator for the caller.
+     * @param operator The account to manage approval for.
+     * @param approved True to grant approval, false to revoke.
+     */
+    function setApprovalForAll(address operator, bool approved) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        if(msg.sender == operator) revert Errors.HydrogenApprovePoolToOwner();
+        _operatorApprovals[msg.sender][operator] = approved;
+        emit ApprovalForAll(msg.sender, operator, approved);
+    }
+
+    /**
+     * @notice Transfers `poolID` token from `from` to `to`.
+     * @param from The account to transfer the token from.
+     * @param to The account to transfer the pool to.
+     * @param poolID The ID of the pool to transfer.
+     */
+    function transferFrom(address from, address to, uint256 poolID) external payable override {
+        _transfer(from, to, poolID);
+    }
+
+    /**
+     * @notice Transfers `poolID` token from `from` to `to`.
+     * @param from The account to transfer the token from.
+     * @param to The account to transfer the pool to.
+     * @param poolID The ID of the pool to transfer.
+     */
+    function safeTransferFrom(address from, address to, uint256 poolID) external payable override {
+        _safeTransfer(from, to, poolID, "");
+    }
+
+    /**
+     * @notice Transfers `poolID` token from `from` to `to`.
+     * @param from The account to transfer the token from.
+     * @param to The account to transfer the pool to.
+     * @param poolID The ID of the pool to transfer.
+     * @param data Arbitrary data to be passed to `to`.
+     */
+    function safeTransferFrom(address from, address to, uint256 poolID, bytes memory data) external payable override {
+        _safeTransfer(from, to, poolID, data);
+    }
+
+    /***************************************
+    MULTICALL FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Receives and executes a batch of function calls on this contract.
+     * @param data The batch of function calls.
+     * @return results The batch of results.
+     */
+    function multicall(bytes[] calldata data) external payable returns (bytes[] memory results) {
+        results = new bytes[](data.length);
+        for (uint256 i = 0; i < data.length; i++) {
+            results[i] = _selfDelegateCall(data[i]);
+        }
+        return results;
+    }
+
+    /***************************************
+    ERC2612 FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Sets the amount of an `ERC20` token that this contract is allowed to transfer from `holder` using `EIP2612`.
+     * @param holder The account to approve tokens.
+     * @param token The address of the token to permit.
+     * @param amount The amount of the token to permit.
+     * @param deadline The timestamp that the transaction must go through before.
+     * @param v secp256k1 signature
+     * @param r secp256k1 signature
+     * @param s secp256k1 signature
+     */
+    function erc2612Permit(address holder, address token, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        IERC20PermitA(token).permit(holder, address(this), amount, deadline, v, r, s);
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Sets the amount of an `ERC20` token that this contract is allowed to transfer from `holder` using a modified version of `EIP2612`.
+     * @param holder The account to approve tokens.
+     * @param token The address of the token to permit.
+     * @param amount The amount of the token to permit.
+     * @param deadline The timestamp that the transaction must go through before.
+     * @param signature secp256k1 signature
+     */
+    function erc2612Permit(address holder, address token, uint256 amount, uint256 deadline, bytes calldata signature) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        IERC20PermitB(token).permit(holder, address(this), amount, deadline, signature);
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Sets the amount of an `ERC20` token that this contract is allowed to transfer from `holder` using an old version of `EIP2612`.
+     * @param holder The account to approve tokens.
+     * @param token The address of the token to permit.
+     * @param nonce Deduplicates permit transactions.
+     * @param expiry The timestamp that the transaction must go through before.
+     * @param allowed True to allow all, false to allow zero.
+     * @param v secp256k1 signature
+     * @param r secp256k1 signature
+     * @param s secp256k1 signature
+     */
+    function erc2612Permit(address holder, address token, uint256 nonce, uint256 expiry, bool allowed, uint8 v, bytes32 r, bytes32 s) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        IERC20PermitC(token).permit(holder, address(this), nonce, expiry, allowed, v, r, s);
+        _reentrancyGuardState = ENTERABLE;
     }
 
     /***************************************
@@ -447,22 +803,12 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
     function getSwapFeeForPair(
         address tokenA,
         address tokenB
-    ) public view override returns (
+    ) external view override returns (
         uint256 feePPM,
         bytes32 receiverLocation
     ) {
-        // if pair returns zero, that's an implicit 'has never been set' and should return the default fee
-        // the default fee is stored at map[0][0]
-        // if the pair returns an 'invalid amount too high', that's an explicit zero fee
-        feePPM = _swapFeeForPair[tokenA][tokenB];
-        if(feePPM == 0) {
-            feePPM = _swapFeeForPair[address(0)][address(0)];
-            receiverLocation = _swapFeeReceiverForPair[address(0)][address(0)];
-        } else {
-            receiverLocation = _swapFeeReceiverForPair[tokenA][tokenB];
-        }
-        if(feePPM >= MAX_PPM) feePPM = 0;
-        return (feePPM, receiverLocation);
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        return _getSwapFeeForPair(tokenA, tokenB);
     }
 
     /**
@@ -480,6 +826,7 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         uint256 feePPM,
         bytes32 receiverLocation
     ) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         return (_swapFeeForPair[tokenA][tokenB], _swapFeeReceiverForPair[tokenA][tokenB]);
     }
 
@@ -487,14 +834,15 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      * @notice Sets the swap fee for multiple pairs.
      * @param params tokenA, tokenB, feePPM, receiverLocation.
      */
-    function setSwapFeesForPairs(SetSwapFeeForPairParam[] calldata params) external override onlyOwner {
+    function setSwapFeesForPairs(SetSwapFeeForPairParam[] calldata params) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        if(msg.sender != _owner) revert Errors.HydrogenNotContractOwner();
         uint256 len = params.length;
         for(uint256 i = 0; i < len; i++) {
             address tokenA = params[i].tokenA;
             address tokenB = params[i].tokenB;
             uint256 feePPM = params[i].feePPM;
-            bytes32 receiverLocation = params[i].receiverLocation;
-            Locations.validateLocation(receiverLocation);
+            bytes32 receiverLocation = _validateOrTransformLocation(params[i].receiverLocation);
             _swapFeeForPair[tokenA][tokenB] = feePPM;
             _swapFeeReceiverForPair[tokenA][tokenB] = receiverLocation;
             emit SwapFeeSetForPair(tokenA, tokenB, feePPM, receiverLocation);
@@ -513,6 +861,7 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
     function maxFlashLoan(
         address token
     ) external view override returns (uint256 amount) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         if(token == address(this)) return 0;
         else return IERC20(token).balanceOf(address(this));
     }
@@ -527,7 +876,8 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         address token,
         uint256 amount
     ) external view override returns (uint256 fee) {
-        (uint256 feePPM, ) = getFlashLoanFeeForToken(token);
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        (uint256 feePPM, ) = _getFlashLoanFeeForToken(token);
         fee = amount * feePPM / MAX_PPM;
     }
 
@@ -544,21 +894,30 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         address token,
         uint256 amount,
         bytes calldata data
-    ) external override returns (bool status) {
+    ) external payable override returns (bool status) {
+        // reentrancy guard enter
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardState = NOT_ENTERABLE;
         // math
-        (uint256 feePPM, bytes32 feeReceiver) = getFlashLoanFeeForToken(token);
+        (uint256 feePPM, bytes32 feeReceiver) = _getFlashLoanFeeForToken(token);
         uint256 fee = amount * feePPM / MAX_PPM;
         // token transfer to
-        SafeERC20.safeTransfer(IERC20(token), receiver, amount);
+        _transferERC20To(token, receiver, amount);
+        // reentrancy guard hand over control
+        _reentrancyGuardState = ENTERABLE;
         // callback
         if(IERC3156FlashBorrower(receiver).onFlashLoan(msg.sender, token, amount, fee, data) != FLASH_LOAN_MAGIC_VALUE) revert Errors.HydrogenFlashLoanCallbackFailed();
+        // reentrancy guard take back control
+        _reentrancyGuardState = NOT_ENTERABLE;
         // token transfer from
-        SafeERC20.safeTransferFrom(IERC20(token), receiver, address(this), amount+fee);
+        _transferERC20From(token, receiver, amount+fee);
         // process fees
         if(fee > 0) {
             _performTokenTransferTo(token, fee, feeReceiver);
             emit TokensTransferred(token, Locations.externalAddressToLocation(receiver), feeReceiver, fee);
         }
+        // reentrancy guard exit
+        _reentrancyGuardState = ENTERABLE;
         return true;
     }
 
@@ -571,23 +930,12 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      */
     function getFlashLoanFeeForToken(
         address token
-    ) public view override returns (
+    ) external view override returns (
         uint256 feePPM,
         bytes32 receiverLocation
     ) {
-        if(token == address(this)) revert Errors.HydrogenSelfReferrence();
-        // if token returns zero, that's an implicit 'has never been set' and should return the default fee
-        // the default fee is stored at map[0]
-        // if the token returns an 'invalid amount too high', that's an explicit zero fee
-        feePPM = _flashLoanFeeForToken[token];
-        if(feePPM == 0) {
-            feePPM = _flashLoanFeeForToken[address(0)];
-            receiverLocation = _flashLoanFeeReceiverForToken[address(0)];
-        } else {
-            receiverLocation = _flashLoanFeeReceiverForToken[token];
-        }
-        if(feePPM >= MAX_PPM) feePPM = 0;
-        return (feePPM, receiverLocation);
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        return _getFlashLoanFeeForToken(token);
     }
 
     /**
@@ -603,6 +951,7 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         uint256 feePPM,
         bytes32 receiverLocation
     ) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         if(token == address(this)) revert Errors.HydrogenSelfReferrence();
         return (_flashLoanFeeForToken[token], _flashLoanFeeReceiverForToken[token]);
     }
@@ -611,17 +960,176 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      * @notice Sets the flash loan fee for multiple tokens.
      * @param params token, feePPM, receiverLocation.
      */
-    function setFlashLoanFeesForTokens(SetFlashLoanFeeForTokenParam[] calldata params) external override onlyOwner {
+    function setFlashLoanFeesForTokens(SetFlashLoanFeeForTokenParam[] calldata params) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        if(msg.sender != _owner) revert Errors.HydrogenNotContractOwner();
         uint256 len = params.length;
         for(uint256 i = 0; i < len; i++) {
             address token = params[i].token;
             uint256 feePPM = params[i].feePPM;
-            bytes32 receiverLocation = params[i].receiverLocation;
-            Locations.validateLocation(receiverLocation);
+            bytes32 receiverLocation = _validateOrTransformLocation(params[i].receiverLocation);
             _flashLoanFeeForToken[token] = feePPM;
             _flashLoanFeeReceiverForToken[token] = receiverLocation;
             emit FlashLoanFeeSetForToken(token, feePPM, receiverLocation);
         }
+    }
+
+    /***************************************
+    REENTRANCY GUARD FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Returns the stored state of reentrancy guard.
+     * @return rgState The current state.
+     */
+    function reentrancyGuardState() external view override returns (uint256 rgState) {
+        return _reentrancyGuardState;
+    }
+
+    /***************************************
+    METADATA FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice A descriptive name for a collection of NFTs in this contract.
+     * @return name_ The NFT name.
+     */
+    function name() external pure override returns (string memory name_) {
+        return "Hydrogen Pool Token";
+    }
+
+    /**
+     * @notice An abbreviated name for NFTs in this contract.
+     * @return symbol_ The NFT symbol.
+     */
+    function symbol() external pure override returns (string memory symbol_) {
+        return "HPT";
+    }
+
+    /**
+     * @notice Returns the Uniform Resource Identifier (URI) for `poolID` token.
+     * Reverts if the token does not exist.
+     * @param poolID The ID of the pool to query.
+     * @return uri The token uri.
+     */
+    function tokenURI(uint256 poolID) external view override returns (string memory uri) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
+        return string(abi.encodePacked(_tokenURIbase, Strings.toString(poolID)));
+    }
+
+    /**
+     * @notice Returns the base URI for computing tokenURI.
+     * @return uri The base URI.
+     */
+    function baseURI() external view override returns (string memory uri) {
+        return _tokenURIbase;
+    }
+
+    /**
+     * @notice Sets the base URI for computing tokenURI.
+     * @param uri The new base URI.
+     */
+    function setBaseURI(string calldata uri) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        if(msg.sender != _owner) revert Errors.HydrogenNotContractOwner();
+        _tokenURIbase = uri;
+        emit BaseURISet(uri);
+    }
+
+    /**
+     * @notice Returns the contract URI.
+     * @return uri The contract URI.
+     */
+    function contractURI() external view override returns (string memory uri) {
+        return _contractURI;
+    }
+
+    /**
+     * @notice Sets the contract URI.
+     * @param uri The new contract URI.
+     */
+    function setContractURI(string calldata uri) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        if(msg.sender != _owner) revert Errors.HydrogenNotContractOwner();
+        _contractURI = uri;
+        emit ContractURISet(uri);
+    }
+
+    /**
+     * @notice Returns true if this contract implements the interface defined by `interfaceId`.
+     * @param interfaceId The id of the interface to query.
+     * @return status True if supported, false otherwise.
+     */
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool status) {
+        return (
+            (interfaceId == 0x01ffc9a7) || // erc165
+            (interfaceId == 0x80ac58cd) || // erc721
+            (interfaceId == 0x5b5e139f) || // erc721 metadata
+            (interfaceId == 0x4f558e79)    // erc721 exists
+        );
+    }
+
+    /***************************************
+    OWNER FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Returns the address of the current owner.
+     * @return contractOwner The address of the contract owner.
+     */
+    function owner() external view override returns (address contractOwner) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        return _owner;
+    }
+
+    /**
+     * @notice Returns the address of the pending owner.
+     * @return pendingContractOwner The address of the pending contract owner.
+     */
+    function pendingOwner() external view override returns (address pendingContractOwner) {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        return _pendingOwner;
+    }
+
+    /**
+     * @notice Starts the ownership transfer of the contract to a new account. Replaces the pending transfer if there is one. The transfer will not be finalized until the new owner calls `acceptOwnership()`.
+     * Can only be called by the current owner.
+     * @param newOwner The new owner of the contract.
+     */
+    function transferOwnership(address newOwner) external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        address oldOwner = _owner;
+        if(msg.sender != oldOwner) revert Errors.HydrogenNotContractOwner();
+        _pendingOwner = newOwner;
+        emit OwnershipTransferStarted(oldOwner, newOwner);
+    }
+
+    /**
+     * @notice The new owner accepts the ownership transfer.
+     * Can only be called by the new owner.
+     */
+    function acceptOwnership() external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        address newOwner = msg.sender;
+        if(newOwner != _pendingOwner) revert Errors.HydrogenNotPendingContractOwner();
+        address oldOwner = _owner;
+        _owner = newOwner;
+        emit OwnershipTransferred(oldOwner, newOwner);
+    }
+
+    /**
+     * @notice Leaves the contract without an owner. It will not be possible to call `onlyOwner` functions anymore.
+     * Can only be called by the current owner.
+     */
+    function renounceOwnership() external payable override {
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        address oldOwner = _owner;
+        if(msg.sender != oldOwner) revert Errors.HydrogenNotContractOwner();
+        _owner = address(0);
+        _pendingOwner = address(0);
+        emit OwnershipTransferStarted(oldOwner, address(0));
+        emit OwnershipTransferred(oldOwner, address(0));
     }
 
     /***************************************
@@ -660,6 +1168,8 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      * @param location The location to check.
      */
     function _performTokenTransferSameLocation(address token, uint256 amount, bytes32 location) internal view {
+        // this call always follows _validateOrTransformLocation(src), so we know src is a valid location
+        // verify the balance is sufficient, but don't modify
         bytes32 locationType = Locations.getLocationType(location);
         if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
             address account = Locations.locationToAddress(location);
@@ -669,12 +1179,10 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
             address account = Locations.locationToAddress(location);
             uint256 balance = _tokenInternalBalanceOfAccount[token][account];
             if(balance < amount) revert Errors.HydrogenInsufficientBalance();
-        } else if(locationType == Locations.LOCATION_TYPE_POOL) {
+        } else {
             uint256 poolID = Locations.locationToPoolID(location);
             uint256 balance = _tokenInternalBalanceOfPool[token][poolID];
             if(balance < amount) revert Errors.HydrogenInsufficientBalance();
-        } else {
-            revert Errors.HydrogenInvalidLocationType(); // dev: branch should never hit when following _validateLocation
         }
     }
 
@@ -690,10 +1198,14 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         uint256 amount,
         bytes32 src
     ) internal {
+        // this call always follows _validateOrTransformLocation(src), so we know src is a valid location
+        // if external address type, erc20 transfer from
+        // if internal address type, deduct from internal balance
+        // if pool type, deduct from internal balance
         bytes32 locationType = Locations.getLocationType(src);
         if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
             address account = Locations.locationToAddress(src);
-            SafeERC20.safeTransferFrom(IERC20(token), account, address(this), amount);
+            _transferERC20From(token, account, amount);
         } else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
             address account = Locations.locationToAddress(src);
             uint256 balance = _tokenInternalBalanceOfAccount[token][account];
@@ -701,15 +1213,13 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
             unchecked {
                 _tokenInternalBalanceOfAccount[token][account] = balance - amount;
             }
-        } else if(locationType == Locations.LOCATION_TYPE_POOL) {
+        } else { // if(locationType == Locations.LOCATION_TYPE_POOL)
             uint256 poolID = Locations.locationToPoolID(src);
             uint256 balance = _tokenInternalBalanceOfPool[token][poolID];
             if(balance < amount) revert Errors.HydrogenInsufficientBalance();
             unchecked {
                 _tokenInternalBalanceOfPool[token][poolID] = balance - amount;
             }
-        } else {
-            revert Errors.HydrogenInvalidLocationType(); // dev: branch should never hit when following _validateLocation
         }
     }
 
@@ -724,18 +1234,95 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         uint256 amount,
         bytes32 dst
     ) internal {
+        // this call always follows _validateOrTransformLocation(src), so we know src is a valid location
+        // if external address type, erc20 transfer to
+        // if internal address type, add to internal balance
+        // if pool type, add to internal balance
         bytes32 locationType = Locations.getLocationType(dst);
         if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
             address account = Locations.locationToAddress(dst);
-            SafeERC20.safeTransfer(IERC20(token), account, amount);
+            _transferERC20To(token, account, amount);
         } else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
             address account = Locations.locationToAddress(dst);
             _tokenInternalBalanceOfAccount[token][account] += amount;
-        } else if(locationType == Locations.LOCATION_TYPE_POOL) {
+        } else { // if(locationType == Locations.LOCATION_TYPE_POOL)
             uint256 poolID = Locations.locationToPoolID(dst);
             _tokenInternalBalanceOfPool[token][poolID] += amount;
-        } else {
-            revert Errors.HydrogenInvalidLocationType();
+        }
+    }
+
+    /**
+     * @notice Transfers the gas token from this contract to `to`.
+     * @param to The address to receive the gas token.
+     * @param amount The amount of the gas token to send.
+     */
+    function _transferGasToken(address to, uint256 amount) internal {
+        // perform low level call
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool success, bytes memory returndata) = payable(to).call{value: amount}("");
+        // detect error
+        if(!success) {
+            // revert
+            if (returndata.length == 0) {
+                // reason not given, use custom error
+                revert Errors.HydrogenGasTokenTransferFailed();
+            } else {
+                // reason given, bubble up
+                // solhint-disable-next-line no-inline-assembly
+                assembly {
+                    revert(add(32, returndata), mload(returndata))
+                }
+            }
+        }
+    }
+
+    /**
+     * @notice Transfers an ERC20 from this contract to another address.
+     * @param token The token to transfer.
+     * @param to The recipient of the token.
+     * @param amount The amount to transfer.
+     */
+    function _transferERC20To(address token, address to, uint256 amount) internal {
+        _transferERC20(token, abi.encodeWithSelector(IERC20(token).transfer.selector, to, amount));
+    }
+
+    /**
+     * @notice Transfers an ERC20 from another address to this contract.
+     * @param token The token to transfer.
+     * @param from The sender of the token.
+     * @param amount The amount to transfer.
+     */
+    function _transferERC20From(address token, address from, uint256 amount) internal {
+        _transferERC20(token, abi.encodeWithSelector(IERC20(token).transferFrom.selector, from, address(this), amount));
+    }
+
+    /**
+     * @notice Transfers an ERC20.
+     * @param token The token to transfer.
+     * @param data The call data (encoded using abi.encode or one of its variants).
+     */
+    function _transferERC20(address token, bytes memory data) private {
+        // perform low level call
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool success, bytes memory returndata) = token.call(data);
+        // detect error
+        if(!success || (returndata.length > 0 && !abi.decode(returndata, (bool)))) {
+            // revert
+            if (returndata.length == 0 || success) {
+                // reason not given, use custom error
+                revert Errors.HydrogenERC20TransferFailed();
+            } else {
+                // reason given, bubble up
+                // solhint-disable-next-line no-inline-assembly
+                assembly {
+                    revert(add(32, returndata), mload(returndata))
+                }
+            }
+        }
+        // success but no data returned
+        else if(returndata.length == 0) {
+            // verify token is contract
+            if(!Address.isContract(token)) revert Errors.HydrogenERC20TransferFailed();
         }
     }
 
@@ -757,17 +1344,16 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
         address tokenB
     ) internal view returns (bytes32 exchangeRate, bytes32 locationB) {
         if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
+        // if the pool exists, it must be either a limit order or a grid order
         uint256 poolType = Pools.getPoolType(poolID);
         if(poolType == Pools.LIMIT_ORDER_POOL_TYPE) {
             LimitOrderPoolData storage poolData = _limitOrderPoolData[poolID];
             if((poolData.tokenA != tokenA) || (poolData.tokenB != tokenB)) revert Errors.HydrogenPoolCannotTradeTheseTokens();
             return (poolData.exchangeRate, poolData.locationB);
-        } else if(poolType == Pools.GRID_ORDER_POOL_TYPE) {
+        } else {
             GridOrderPoolData storage poolData = _gridOrderPoolData[poolID];
             exchangeRate = poolData.tokenPairToExchangeRate[tokenA][tokenB];
             return(exchangeRate, poolData.tokenPairToLocation[tokenA][tokenB]);
-        } else {
-            revert Errors.HydrogenUnknownPoolType(); // dev: branch should never hit
         }
     }
 
@@ -776,20 +1362,56 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
     ***************************************/
 
     /**
-     * @notice Reverts if the location referrences the nucleus itself.
-     * @param src The location to query.
+     * @notice Validates a location. Applies a transformation if needed. Reverts if invalid.
+     * This simply checks that token transfers to and from the location will succeed.
+     * It does not check for example if the poolID exists.
+     * @param loc The location to validate.
+     * @return validatedLocation The location, validated and possibly transformed.
      */
-    function _validateLocationNotThis(bytes32 src) internal view {
-        bytes32 locationType = Locations.getLocationType(src);
-        if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
-            address account = Locations.locationToAddress(src);
+    function _validateOrTransformLocation(bytes32 loc) internal view returns (bytes32 validatedLocation) {
+        bytes32 locationType = Locations.getLocationType(loc);
+        // if address type
+        if(
+            (locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) ||
+            (locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS)
+        ) {
+            address account = Locations.locationToAddress(loc);
+            if(account == address(0)) revert Errors.HydrogenAddressZero();
             if(account == address(this)) revert Errors.HydrogenSelfReferrence();
-        } else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
-            address account = Locations.locationToAddress(src);
-            if(account == address(this)) revert Errors.HydrogenSelfReferrence();
-        } else if(locationType == Locations.LOCATION_TYPE_POOL) {
-            // ok
-        } else {
+            return loc;
+        }
+        // if pool type
+        else if(locationType == Locations.LOCATION_TYPE_POOL) {
+            // for the purpose of this test, all poolIDs are considered valid, even if they don't exist or are not owned by msg.sender
+            return loc;
+        }
+        // if flag type
+        else if(locationType == Locations.LOCATION_TYPE_FLAGS) {
+            // if external address flag
+            if(loc == Locations.LOCATION_FLAG_EXTERNAL_ADDRESS) {
+                // return msg.sender
+                return Locations.externalAddressToLocation(msg.sender);
+            }
+            // if internal address flag
+            else if(loc == Locations.LOCATION_FLAG_INTERNAL_ADDRESS) {
+                // return msg.sender
+                return Locations.internalAddressToLocation(msg.sender);
+            }
+            // if pool flag
+            else if(loc == Locations.LOCATION_FLAG_POOL) {
+                // if the poolID was known, loc would have been transformed before passing into this function
+                // don't know which poolID the caller is talking about
+                revert Errors.HydrogenMissingPoolContext();
+            }
+            // if unknown flag type
+            else {
+                // revert
+                revert Errors.HydrogenInvalidLocationFlag();
+            }
+        }
+        // if unknown location type
+        else {
+            // revert
             revert Errors.HydrogenInvalidLocationType();
         }
     }
@@ -799,21 +1421,20 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
      * @param src The location to query.
      */
     function _validateLocationTransferFromAuthorization(bytes32 src) internal view {
+        // this call always follows _validateOrTransformLocation(src), so we know src is a valid location
+        // if its an address type, make sure its msg.sender
+        // if its a pool type, make sure its owned by msg.sender
         bytes32 locationType = Locations.getLocationType(src);
-        if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
+        if(
+            (locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) ||
+            (locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS)
+        ) {
             address account = Locations.locationToAddress(src);
-            if(account == address(this)) revert Errors.HydrogenSelfReferrence();
             if(account != msg.sender) revert Errors.HydrogenTransferFromAccountNotMsgSender();
-        } else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
-            address account = Locations.locationToAddress(src);
-            if(account == address(this)) revert Errors.HydrogenSelfReferrence();
-            if(account != msg.sender) revert Errors.HydrogenTransferFromAccountNotMsgSender();
-        } else if(locationType == Locations.LOCATION_TYPE_POOL) {
+        } else {
             uint256 poolID = Locations.locationToPoolID(src);
             if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
-            if(ownerOf(poolID) != msg.sender) revert Errors.HydrogenTransferFromPoolNotOwnedByMsgSender();
-        } else {
-            revert Errors.HydrogenInvalidLocationType();
+            if(_ownerOf(poolID) != msg.sender) revert Errors.HydrogenNotPoolOwner();
         }
     }
 
@@ -842,9 +1463,9 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
             if(token == address(this)) revert Errors.HydrogenSelfReferrence();
             _addTokenToGridOrderPool(poolData, token);
             // transfer tokens from source to pool
-            Locations.validateLocation(tokenSources[i].location);
-            _validateLocationTransferFromAuthorization(tokenSources[i].location);
-            _performTokenTransfer(token, tokenSources[i].amount, tokenSources[i].location, poolLocation);
+            bytes32 srcLocation = _validateOrTransformLocation(tokenSources[i].location);
+            _validateLocationTransferFromAuthorization(srcLocation);
+            _performTokenTransfer(token, tokenSources[i].amount, srcLocation, poolLocation);
         }
         // handle trade requests
         uint256 tradeRequestsLength = tradeRequests.length;
@@ -855,10 +1476,10 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
             if(tokenA == tokenB) revert Errors.HydrogenSameToken();
             if((tokenA == address(this)) || tokenB == address(this)) revert Errors.HydrogenSelfReferrence();
             bytes32 locationB = tradeRequests[i].locationB;
-            if(locationB == Locations.LOCATION_THIS_POOL) {
+            if(locationB == Locations.LOCATION_FLAG_POOL) {
                 locationB = poolLocation;
             } else {
-                Locations.validateLocation(locationB);
+                locationB = _validateOrTransformLocation(locationB);
             }
             bytes32 exchangeRate = tradeRequests[i].exchangeRate;
             _addTokenToGridOrderPool(poolData, tokenA);
@@ -889,48 +1510,230 @@ contract HydrogenNucleus is IHydrogenNucleus, ERC721Enumerable, Multicall, Ownab
     }
 
     /***************************************
-    URI FUNCTIONS
+    ERC721 HELPER FUNCTIONS
     ***************************************/
 
     /**
-     * @notice Returns the base URI for computing tokenURI.
-     * @return uri The base URI.
+     * @notice Returns the owner of the `poolID` token.
+     * Reverts if the token does not exist.
+     * @param poolID The ID of the pool to query.
+     * @return holder The owner of the token.
      */
-    function baseURI() external view override returns (string memory uri) {
-        return _tokenURIbase;
+    function _ownerOf(uint256 poolID) internal view returns (address holder) {
+        return _owners[poolID];
     }
 
     /**
-     * @notice Returns the base URI for computing tokenURI.
-     * @return uri The base URI.
+     * @notice Returns true if the pool exists.
+     * @param poolID The ID of the pool to query.
+     * @return status True if the pool exists, false otherwise.
      */
-    function _baseURI() internal view override returns (string memory uri) {
-        return _tokenURIbase;
+    function _exists(uint256 poolID) internal view returns (bool status) {
+        return (_ownerOf(poolID) != address(0));
     }
 
     /**
-     * @notice Sets the base URI for computing tokenURI.
-     * @param uri The new base URI.
+     * @notice Returns the account approved for `poolID` token.
+     * Reverts if the token does not exist.
+     * @param poolID The ID of the pool to query.
+     * @return operator The account approved for the specific token.
      */
-    function setBaseURI(string calldata uri) external override onlyOwner {
-        _tokenURIbase = uri;
-        emit BaseURISet(uri);
+    function _getApproved(uint256 poolID) internal view returns (address operator) {
+        if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
+        return _tokenApprovals[poolID];
     }
 
     /**
-     * @notice Returns the contract URI.
-     * @return uri The contract URI.
+     * @notice Returns if the `operator` is allowed to manage all of the assets of `owner`.
+     * @param holder The holder account to query.
+     * @param operator The operator account to query.
+     * @return isApproved True if operator is approved, false otherwise.
      */
-    function contractURI() external view override returns (string memory uri) {
-        return _contractURI;
+    function _isApprovedForAll(address holder, address operator) internal view returns (bool isApproved) {
+        return _operatorApprovals[holder][operator];
     }
 
     /**
-     * @notice Sets the contract URI.
-     * @param uri The new contract URI.
+     * @notice Transfers `poolID` token from `from` to `to`.
+     * @param from The account to transfer the token from.
+     * @param to The account to transfer the pool to.
+     * @param poolID The ID of the pool to transfer.
      */
-    function setContractURI(string calldata uri) external override onlyOwner {
-        _contractURI = uri;
-        emit ContractURISet(uri);
+    function _transfer(address from, address to, uint256 poolID) internal virtual {
+        // reentrancy guard enter
+        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        // checks
+        address holder = _ownerOf(poolID);
+        // existance
+        if(holder == address(0)) revert Errors.HydrogenPoolDoesNotExist();
+        // ownership or approval
+        if(!((holder == msg.sender) || _isApprovedForAll(holder, msg.sender) || (_getApproved(poolID) == msg.sender))) revert Errors.HydrogenNotPoolOwnerOrOperator();
+        // from
+        if(holder != from) revert Errors.HydrogenNotPoolOwner();
+        // to
+        if(to == address(0)) revert Errors.HydrogenAddressZero();
+        if(to == address(this)) revert Errors.HydrogenSelfReferrence();
+        // effects
+        // clear approvals from the previous owner
+        delete _tokenApprovals[poolID];
+        // manage balances
+        unchecked {
+            _balances[from] -= 1;
+            _balances[to] += 1;
+        }
+        // assign ownership
+        _owners[poolID] = to;
+        emit Transfer(from, to, poolID);
+    }
+
+    /**
+     * @notice Transfers `poolID` token from `from` to `to`.
+     * @param from The account to transfer the token from.
+     * @param to The account to transfer the pool to.
+     * @param poolID The ID of the pool to transfer.
+     * @param data Arbitrary data to be passed to `to`.
+     */
+    function _safeTransfer(address from, address to, uint256 poolID, bytes memory data) internal virtual {
+        // transfer ownership
+        _transfer(from, to, poolID);
+        // call to receiver onERC721Received
+        if (Address.isContract(to)) {
+            // call out. allowed to reenter safely
+            try IERC721Receiver(to).onERC721Received(msg.sender, from, poolID, data) returns (bytes4 retval) {
+                // check return value
+                if(retval != ON_ERC721_RECEIVED_MAGIC_VALUE) revert Errors.HydrogenNotERC721Receiver();
+            } catch (bytes memory reason) {
+                // revert
+                if (reason.length == 0) {
+                    // reason not given, use custom error
+                    revert Errors.HydrogenNotERC721Receiver();
+                } else {
+                    // reason given, bubble up
+                    // solhint-disable-next-line no-inline-assembly
+                    assembly {
+                        revert(add(32, reason), mload(reason))
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @notice Mints `poolID` and transfers it to `to`.
+     * @param to The receiver of the new pool.
+     * @param poolID The ID of the pool to mint.
+     */
+    function _mint(address to, uint256 poolID) internal {
+        if(to == address(0)) revert Errors.HydrogenAddressZero();
+        if(_exists(poolID)) revert Errors.HydrogenPoolAlreadyExists();
+        unchecked {
+            _balances[to] += 1;
+        }
+        _owners[poolID] = to;
+        emit Transfer(address(0), to, poolID);
+    }
+
+    /***************************************
+    MULTICALL HELPER FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Executes a single function.
+     * @param data The function to execute.
+     * @return result The result of the function.
+     */
+    function _selfDelegateCall(bytes calldata data) internal returns (bytes memory result) {
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool success, bytes memory returndata) = address(this).delegatecall(data);
+        if (success) {
+            return returndata;
+        } else {
+            _revert(returndata);
+        }
+    }
+
+    /**
+     * @notice Reverts the returndata.
+     * @param returndata The data for the revert message.
+     */
+    function _revert(bytes memory returndata) internal pure {
+        // Look for revert reason and bubble it up if present
+        if (returndata.length > 0) {
+            // The easiest way to bubble the revert reason is using memory via assembly
+            /// @solidity memory-safe-assembly
+            // solhint-disable-next-line no-inline-assembly
+            assembly {
+                let returndata_size := mload(returndata)
+                revert(add(32, returndata), returndata_size)
+            }
+        } else {
+            revert Errors.HydrogenUnknownError();
+        }
+    }
+
+    /***************************************
+    SWAP FEE HELPER FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Gets the swap fee for a pair.
+     * The default fee is stored at [address zero, address zero].
+     * @param tokenA The token that market takers buy.
+     * @param tokenB The token that market takers sell.
+     * @return feePPM The fee measured in parts per million.
+     * @return receiverLocation The receiver of fees.
+     */
+    function _getSwapFeeForPair(
+        address tokenA,
+        address tokenB
+    ) internal view returns (
+        uint256 feePPM,
+        bytes32 receiverLocation
+    ) {
+        // if pair returns zero, that's an implicit 'has never been set' and should return the default fee
+        // the default fee is stored at map[0][0]
+        // if the pair returns an 'invalid amount too high', that's an explicit zero fee
+        feePPM = _swapFeeForPair[tokenA][tokenB];
+        if(feePPM == 0) {
+            feePPM = _swapFeeForPair[address(0)][address(0)];
+            receiverLocation = _swapFeeReceiverForPair[address(0)][address(0)];
+        } else {
+            receiverLocation = _swapFeeReceiverForPair[tokenA][tokenB];
+        }
+        if(feePPM >= MAX_PPM) feePPM = 0;
+        return (feePPM, receiverLocation);
+    }
+
+    /***************************************
+    FLASH LOAN HELPER FUNCTIONS
+    ***************************************/
+
+    /**
+     * @notice Gets the flash loan fee for a token.
+     * The default fee is stored at address zero.
+     * @param token The loan currency.
+     * @return feePPM The fee measured in parts per million.
+     * @return receiverLocation The receiver of fees.
+     */
+    function _getFlashLoanFeeForToken(
+        address token
+    ) internal view returns (
+        uint256 feePPM,
+        bytes32 receiverLocation
+    ) {
+        if(token == address(this)) revert Errors.HydrogenSelfReferrence();
+        // if token returns zero, that's an implicit 'has never been set' and should return the default fee
+        // the default fee is stored at map[0]
+        // if the token returns an 'invalid amount too high', that's an explicit zero fee
+        feePPM = _flashLoanFeeForToken[token];
+        if(feePPM == 0) {
+            feePPM = _flashLoanFeeForToken[address(0)];
+            receiverLocation = _flashLoanFeeReceiverForToken[address(0)];
+        } else {
+            receiverLocation = _flashLoanFeeReceiverForToken[token];
+        }
+        if(feePPM >= MAX_PPM) feePPM = 0;
+        return (feePPM, receiverLocation);
     }
 }
+// solhint-enable max-states-count

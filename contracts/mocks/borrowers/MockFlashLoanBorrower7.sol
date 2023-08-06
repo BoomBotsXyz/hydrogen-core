@@ -11,9 +11,9 @@ pragma solidity 0.8.19;
  */
 contract MockFlashLoanBorrower7 {
 
-    address public nucleus;
+    address payable public nucleus;
 
-    constructor(address nuc) {
+    constructor(address payable nuc) {
         nucleus = nuc;
     }
 

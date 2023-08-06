@@ -1,7 +1,6 @@
 import { ethers } from "hardhat";
 import { BigNumber as BN, BigNumberish } from "ethers";
 const formatUnits = ethers.utils.formatUnits
-//import UniswapV3PoolArtifact from "@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json";
 
 // helper functions
 
@@ -35,6 +34,8 @@ export function rightPad(s: any, l: number, f=' ') {
 }
 exports.rightPad = rightPad
 
+// like ethers.utils.formatUnits()
+// except keeps trailing zeros
 export function formatUnits2(n: any, dec: any) {
   var s = formatUnits(n, dec)
   while(s.length - s.indexOf('.') <= dec) s = `${s}0`
@@ -42,7 +43,9 @@ export function formatUnits2(n: any, dec: any) {
 }
 exports.formatUnits2 = formatUnits2
 
+// returns a function that formats numbers to given decimals
 export function formatNumber(params: any) {
+  // formatter function
   function f(n: string) {
     if(typeof n == "number") n = `${n}`
     var str = `${parseInt(n).toLocaleString()}`
@@ -83,6 +86,12 @@ export function toAbiEncoded(bn: BigNumberish) {
 }
 exports.toAbiEncoded = toAbiEncoded
 
+// same as above but a list
+export function abiEncodeArgs(list: BigNumberish[]) {
+  return list.map(toAbiEncoded).join('');
+}
+exports.abiEncodeArgs = abiEncodeArgs
+
 // formats a BigNumber into a string representation of a float
 // like ethers.utils.formatUnits() except keeps trailing zeros
 export function formatUnitsFull(amount:BN, decimals:number=18) {
@@ -94,9 +103,19 @@ export function formatUnitsFull(amount:BN, decimals:number=18) {
 }
 exports.formatUnitsFull = formatUnitsFull
 
-// given a bignumber, converts it to an integer
+// given a bignumber, converts it to an integer respecting decimals
 // will throw if the number cannot be safely represented as a js number type
 export function bignumberToNumber(bn:BigNumberish, decimals:number=18) {
   return parseInt(formatUnits(bn, decimals))
 }
 exports.bignumberToNumber = bignumberToNumber
+
+export function formatPPM(ppm:BigNumberish) {
+  ppm = BN.from(ppm);
+  var L = ppm.div(10000).toString();
+  var R = ppm.mod(10000).toString();
+  while(R.length < 4) R = `0${R}`;
+  while(R.length > 1 && R[R.length-1] == "0") R = R.substring(0, R.length-1);
+  return `${L}.${R}%`;
+}
+exports.formatPPM = formatPPM

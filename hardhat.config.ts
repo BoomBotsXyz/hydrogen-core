@@ -1,3 +1,5 @@
+import { ethers } from "ethers";
+ethers.BigNumber.prototype.toJSON = function toJSON(_key:any) { return this.toString() };
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "hardhat-abi-exporter";
