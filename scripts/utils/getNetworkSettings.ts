@@ -11,7 +11,7 @@
 
 // given a chainID, returns some settings to use for the network
 export function getNetworkSettings(chainID: number) {
-  const KNOWN_CHAINS = [1, 5, 111555111, 137, 80001, 1313161554, 1313161555, 84531, 31337];
+  const KNOWN_CHAINS = [1, 5, 111555111, 137, 80001, 1313161554, 1313161555, 8453, 84531, 31337];
   if(!KNOWN_CHAINS.includes(chainID)) throw new Error(`chainID '${chainID}' unknown`);
 
   // number of blocks to wait to ensure finality
@@ -23,6 +23,7 @@ export function getNetworkSettings(chainID: number) {
     [80001]: 5,
     [1313161554]: 5,
     [1313161555]: 5,
+    [8453]: 5,
     [84531]: 5,
     [31337]: 0
   };
@@ -38,7 +39,8 @@ export function getNetworkSettings(chainID: number) {
     [80001]: {maxFeePerGas: 2 * ONE_GWEI + 1, maxPriorityFeePerGas: 1 * ONE_GWEI},
     [1313161554]: {},
     [1313161555]: {},
-    [84531]: {},
+    [8453]: {},//{maxFeePerGas: 100, maxPriorityFeePerGas: 90},
+    [84531]: {},//{maxFeePerGas: 100, maxPriorityFeePerGas: 90},
     [31337]: {},
   };
   let overrides = OVERRIDES.hasOwnProperty(chainID) ? OVERRIDES[chainID] : {};
@@ -56,6 +58,7 @@ export function getNetworkSettings(chainID: number) {
     [80001]: process.env.MUMBAI_URL,
     [1313161554]: process.env.AURORA_URL,
     [1313161555]: process.env.AURORA_TESTNET_URL,
+    [8453]: process.env.BASE_URL,
     [84531]: process.env.BASE_GOERLI_URL,
     [31337]: "" // technically this does have a url when forking. but we want this to fail if not listening to prod network
   }

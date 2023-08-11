@@ -12,7 +12,9 @@ const ethereum_fork = { url: process.env.ETHEREUM_URL || '' };
 const goerli_fork = { url: process.env.GOERLI_URL || '' };
 const sepolia_fork = { url: process.env.SEPOLIA_URL || '' };
 const polygon_fork = { url: process.env.POLYGON_URL || '' };
-const mumbai_fork = { url: process.env.MUMBAI_URL || '' };
+const mumbai_fork = { url: process.env.MUMBAI_URL || '', blockNumber: 38788511 };
+const base_fork = { url: process.env.BASE_URL || '', blockNumber: 2470800 }
+const base_goerli_fork = { url: process.env.BASE_GOERLI_URL || '', blockNumber: 8172956 };
 const no_fork = undefined;
 const forking = (
     process.env.FORK_NETWORK === "ethereum"       ? ethereum_fork
@@ -20,6 +22,8 @@ const forking = (
   : process.env.FORK_NETWORK === "sepolia"        ? sepolia_fork
   : process.env.FORK_NETWORK === "polygon"        ? polygon_fork
   : process.env.FORK_NETWORK === "mumbai"         ? mumbai_fork
+  : process.env.FORK_NETWORK === "base"           ? base_fork
+  : process.env.FORK_NETWORK === "basegoerli"     ? base_goerli_fork
   : no_fork
 );
 
@@ -59,6 +63,16 @@ const config: HardhatUserConfig = {
       accounts: accounts,
       hardfork: "merge"
     },
+    base: {
+      url: process.env.BASE_URL || '',
+      chainId: 8453,
+      accounts: accounts
+    },
+    basegoerli: {
+      url: process.env.BASE_GOERLI_URL || '',
+      chainId: 84531,
+      accounts: accounts
+    },
   },
   solidity: {
     compilers: [
@@ -92,7 +106,7 @@ const config: HardhatUserConfig = {
   gasReporter: {
     enabled: true,
     currency: "USD",
-    gasPrice: 100,
+    gasPrice: 2,
     coinmarketcap: process.env.CMC_API_KEY || "",
   },
   etherscan: {
@@ -102,7 +116,27 @@ const config: HardhatUserConfig = {
       sepolia: process.env.ETHERSCAN_API_KEY || "",
       polygon: process.env.POLYGONSCAN_API_KEY || "",
       polygonMumbai: process.env.POLYGONSCAN_API_KEY || "",
-    }
+      base: process.env.BASESCAN_API_KEY || "",
+      "base-goerli": "PLACEHOLDER_STRING"
+     },
+     customChains: [
+       {
+         network: "base",
+         chainId: 8453,
+         urls: {
+          apiURL: "https://api.basescan.org/api",
+          browserURL: "https://basescan.org"
+         }
+       },
+       {
+         network: "base-goerli",
+         chainId: 84531,
+         urls: {
+          apiURL: "https://api-goerli.basescan.org/api",
+          browserURL: "https://goerli.basescan.org"
+         }
+       }
+     ]
   }
 };
 

@@ -8,6 +8,7 @@ const accounts = JSON.parse(process.env.ACCOUNTS || "{}");
 const hydrogendeployer = new ethers.Wallet(accounts.hydrogendeployer.key, provider);
 
 import { HydrogenNucleus } from "./../../typechain-types";
+import { delay } from "./../utils/misc";
 import { isDeployed } from "./../utilities/expectDeployed";
 import { logContractAddress } from "./../utilities/logContractAddress";
 import { getNetworkSettings } from "./../utils/getNetworkSettings";
@@ -28,7 +29,7 @@ async function main() {
   function isChain(chainid: number, chainName: string) {
     return ((chainID === chainid) || ((chainID === 31337) && (process.env.FORK_NETWORK === chainName)));
   }
-  if(!isChain(80001, "mumbai")) throw("Only run this on Polygon Mumbai or a local fork of Mumbai");
+  if(!isChain(8453, "base")) throw("Only run this on Base Mainnet or a local fork of Base");
 
   await deployNucleus();
   await logAddresses();
@@ -45,11 +46,10 @@ async function deployNucleus() {
     if(chainID != 31337) await verifyContract(nucleus.address, args);
     if(!!NUCLEUS_ADDRESS && nucleus.address != NUCLEUS_ADDRESS) throw new Error(`Deployed nucleus to ${nucleus.address}, expected ${NUCLEUS_ADDRESS}`)
   }
-  let args = [accounts.hydrogendeployer.address];
-  if(chainID != 31337) await verifyContract(nucleus.address, args);
 }
 
 async function logAddresses() {
+  if(!nucleus) return
   console.log("");
   console.log("| Contract Name                | Address                                      |");
   console.log("|------------------------------|----------------------------------------------|");
