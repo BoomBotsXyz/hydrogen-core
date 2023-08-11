@@ -49,10 +49,10 @@ contract HydrogenNucleus is IHydrogenNucleus {
 
     // token internal balances
 
-    // token => account => balance
+    // account => token => balance
     mapping(address => mapping(address => uint256)) internal _tokenInternalBalanceOfAccount;
-    // token => poolID => balance
-    mapping(address => mapping(uint256 => uint256)) internal _tokenInternalBalanceOfPool;
+    // poolID => token => balance
+    mapping(uint256 => mapping(address => uint256)) internal _tokenInternalBalanceOfPool;
 
     // pool data
 
@@ -136,19 +136,28 @@ contract HydrogenNucleus is IHydrogenNucleus {
         address token,
         bytes32 location
     ) external view override returns (uint256 balance) {
+        // checks
         if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         if(token == address(this)) revert Errors.HydrogenSelfReferrence();
         location = _validateOrTransformLocation(location);
         bytes32 locationType = Locations.getLocationType(location);
+        // if external address type
         if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
+            // get erc20 balanceOf
             address account = Locations.locationToAddress(location);
             return IERC20(token).balanceOf(account);
-        } else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
+        }
+        // if internal address type
+        else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
+            // get internal balance
             address account = Locations.locationToAddress(location);
-            return _tokenInternalBalanceOfAccount[token][account];
-        } else {
+            return _tokenInternalBalanceOfAccount[account][token];
+        }
+        // if pool type
+        else {
+            // get internal balance
             uint256 poolID = Locations.locationToPoolID(location);
-            return _tokenInternalBalanceOfPool[token][poolID];
+            return _tokenInternalBalanceOfPool[poolID][token];
         }
     }
 
@@ -297,7 +306,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
         if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
         // if the pool exists, it must be either a limit order or a grid order
         uint256 poolType = Pools.getPoolType(poolID);
-        amountA = _tokenInternalBalanceOfPool[tokenA][poolID];
+        amountA = _tokenInternalBalanceOfPool[poolID][tokenA];
         // if is limit order
         if(poolType == Pools.LIMIT_ORDER_POOL_TYPE) {
             LimitOrderPoolData storage poolData = _limitOrderPoolData[poolID];
@@ -349,7 +358,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
         return (
             poolData.tokenA,
             poolData.tokenB,
-            _tokenInternalBalanceOfPool[poolData.tokenA][poolID],
+            _tokenInternalBalanceOfPool[poolID][poolData.tokenA],
             poolData.exchangeRate,
             poolData.locationB
         );
@@ -459,7 +468,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
         for(uint256 i = 0; i < tokensLength; i++) {
             address tokenA = poolData.tokenIndexToAddress[i+1];
             tokens[i] = tokenA;
-            balances[i] = _tokenInternalBalanceOfPool[tokenA][poolID];
+            balances[i] = _tokenInternalBalanceOfPool[poolID][tokenA];
             for(uint256 j = 0; j < tokensLength; j++) {
                 if(i == j) continue;
                 address tokenB = poolData.tokenIndexToAddress[j+1];
@@ -541,7 +550,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
         uint256 amountBToFeeReceiver = (params.amountB * feePPM) / MAX_PPM;
         uint256 amountBToPool = params.amountB - amountBToFeeReceiver;
         if(!ExchangeRateMath.isMarketOrderAcceptable(params.amountA, amountBToPool, exchangeRate)) revert Errors.HydrogenExchangeRateDisagreement();
-        uint256 capacity = _tokenInternalBalanceOfPool[params.tokenA][params.poolID];
+        uint256 capacity = _tokenInternalBalanceOfPool[params.poolID][params.tokenA];
         if(capacity < params.amountA) revert Errors.HydrogenInsufficientCapacity();
 
         // effects
@@ -1168,20 +1177,28 @@ contract HydrogenNucleus is IHydrogenNucleus {
      * @param location The location to check.
      */
     function _performTokenTransferSameLocation(address token, uint256 amount, bytes32 location) internal view {
-        // this call always follows _validateOrTransformLocation(src), so we know src is a valid location
+        // this call always follows _validateOrTransformLocation(src), so we know location is a valid location
         // verify the balance is sufficient, but don't modify
         bytes32 locationType = Locations.getLocationType(location);
+        // if external address type
         if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
+            // check erc20 balance
             address account = Locations.locationToAddress(location);
             uint256 balance = IERC20(token).balanceOf(account);
             if(balance < amount) revert Errors.HydrogenInsufficientBalance();
-        } else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
+        }
+        // if internal address type
+        else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
+            // check internal balance
             address account = Locations.locationToAddress(location);
-            uint256 balance = _tokenInternalBalanceOfAccount[token][account];
+            uint256 balance = _tokenInternalBalanceOfAccount[account][token];
             if(balance < amount) revert Errors.HydrogenInsufficientBalance();
-        } else {
+        }
+        // if pool type
+        else {
+            // check internal balance
             uint256 poolID = Locations.locationToPoolID(location);
-            uint256 balance = _tokenInternalBalanceOfPool[token][poolID];
+            uint256 balance = _tokenInternalBalanceOfPool[poolID][token];
             if(balance < amount) revert Errors.HydrogenInsufficientBalance();
         }
     }
@@ -1199,26 +1216,31 @@ contract HydrogenNucleus is IHydrogenNucleus {
         bytes32 src
     ) internal {
         // this call always follows _validateOrTransformLocation(src), so we know src is a valid location
-        // if external address type, erc20 transfer from
-        // if internal address type, deduct from internal balance
-        // if pool type, deduct from internal balance
         bytes32 locationType = Locations.getLocationType(src);
+        // if external address type
         if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
+            // erc20 transfer from
             address account = Locations.locationToAddress(src);
             _transferERC20From(token, account, amount);
-        } else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
+        }
+        // if internal address type
+        else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
+            // deduct from internal balance
             address account = Locations.locationToAddress(src);
-            uint256 balance = _tokenInternalBalanceOfAccount[token][account];
+            uint256 balance = _tokenInternalBalanceOfAccount[account][token];
             if(balance < amount) revert Errors.HydrogenInsufficientBalance();
             unchecked {
-                _tokenInternalBalanceOfAccount[token][account] = balance - amount;
+                _tokenInternalBalanceOfAccount[account][token] = balance - amount;
             }
-        } else { // if(locationType == Locations.LOCATION_TYPE_POOL)
+        }
+        // if pool type
+        else {
+            // deduct from internal balance
             uint256 poolID = Locations.locationToPoolID(src);
-            uint256 balance = _tokenInternalBalanceOfPool[token][poolID];
+            uint256 balance = _tokenInternalBalanceOfPool[poolID][token];
             if(balance < amount) revert Errors.HydrogenInsufficientBalance();
             unchecked {
-                _tokenInternalBalanceOfPool[token][poolID] = balance - amount;
+                _tokenInternalBalanceOfPool[poolID][token] = balance - amount;
             }
         }
     }
@@ -1235,19 +1257,24 @@ contract HydrogenNucleus is IHydrogenNucleus {
         bytes32 dst
     ) internal {
         // this call always follows _validateOrTransformLocation(src), so we know src is a valid location
-        // if external address type, erc20 transfer to
-        // if internal address type, add to internal balance
-        // if pool type, add to internal balance
         bytes32 locationType = Locations.getLocationType(dst);
+        // if external address type
         if(locationType == Locations.LOCATION_TYPE_EXTERNAL_ADDRESS) {
+            // erc20 transfer to
             address account = Locations.locationToAddress(dst);
             _transferERC20To(token, account, amount);
-        } else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
+        }
+        // if internal address type
+        else if(locationType == Locations.LOCATION_TYPE_INTERNAL_ADDRESS) {
+            // add to internal balance
             address account = Locations.locationToAddress(dst);
-            _tokenInternalBalanceOfAccount[token][account] += amount;
-        } else { // if(locationType == Locations.LOCATION_TYPE_POOL)
+            _tokenInternalBalanceOfAccount[account][token] += amount;
+        }
+        // if pool type
+        else {
+            // add to internal balance
             uint256 poolID = Locations.locationToPoolID(dst);
-            _tokenInternalBalanceOfPool[token][poolID] += amount;
+            _tokenInternalBalanceOfPool[poolID][token] += amount;
         }
     }
 
@@ -1659,14 +1686,14 @@ contract HydrogenNucleus is IHydrogenNucleus {
     function _revert(bytes memory returndata) internal pure {
         // Look for revert reason and bubble it up if present
         if (returndata.length > 0) {
-            // The easiest way to bubble the revert reason is using memory via assembly
-            /// @solidity memory-safe-assembly
+            // reason given, bubble up
             // solhint-disable-next-line no-inline-assembly
             assembly {
                 let returndata_size := mload(returndata)
                 revert(add(32, returndata), returndata_size)
             }
         } else {
+            // reason not given, use custom error
             revert Errors.HydrogenUnknownError();
         }
     }
