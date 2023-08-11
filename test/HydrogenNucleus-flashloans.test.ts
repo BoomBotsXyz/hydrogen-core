@@ -22,7 +22,7 @@ const { AddressZero, WeiPerEther, MaxUint256 } = ethers.constants;
 const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
 const MAX_PPM = BN.from(1_000_000); // parts per million
 
-const INVALID_LOCATION_4 = "0x0400000000000000000000000000000000000000000000000000000000000000";
+const INVALID_LOCATION_6 = "0x0600000000000000000000000000000000000000000000000000000000000000";
 const NULL_LOCATION = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 describe("HydrogenNucleus-flashloans", function () {
@@ -171,14 +171,14 @@ describe("HydrogenNucleus-flashloans", function () {
       await expect(tx).to.not.emit(nucleus, "TokensTransferred");
     });
     it("non owner cannot set fees", async function () {
-      await expect(nucleus.connect(user1).setFlashLoanFeesForTokens([])).to.be.revertedWith("Ownable: caller is not the owner");
+      await expect(nucleus.connect(user1).setFlashLoanFeesForTokens([])).to.be.revertedWithCustomError(nucleus, "HydrogenNotContractOwner");
     });
     it("cannot set fee receiver to invalid location", async function () {
       await expect(nucleus.connect(owner).setFlashLoanFeesForTokens([
         {
           token: token1.address,
           feePPM: 0,
-          receiverLocation: INVALID_LOCATION_4
+          receiverLocation: INVALID_LOCATION_6
         }
       ])).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
     });

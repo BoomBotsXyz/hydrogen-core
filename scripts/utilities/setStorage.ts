@@ -23,6 +23,7 @@ export function abiEncodeArgs(list: BigNumberish[]) {
 // manipulates storage in the hardhat test network
 export async function setStorageAt(address: string, index: string, value: string) {
   index = hexStripZeros(index);
+  if(index == "0x") index = "0x0"
   await ethers.provider.send("hardhat_setStorageAt", [address, index, value]);
   await ethers.provider.send("evm_mine", []); // Just mines to the next block
 };

@@ -13,9 +13,9 @@ import { IERC3156FlashBorrower } from "./../../interfaces/IERC3156FlashBorrower.
  */
 contract MockFlashLoanBorrower8 is IERC3156FlashBorrower {
 
-    address public nucleus;
+    address payable public nucleus;
 
-    constructor(address nuc) {
+    constructor(address payable nuc) {
         nucleus = nuc;
     }
 

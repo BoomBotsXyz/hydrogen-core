@@ -18,12 +18,12 @@ contract MockFlashSwapCallee5 is IHydrogenFlashSwapCallee {
 
     event Callback();
 
-    address public nucleus;
+    address payable public nucleus;
 
     // keccak256("HydrogenNucleus.onFlashSwap");
     bytes32 internal constant FLASH_SWAP_MAGIC_VALUE = 0xef2ee65b98afb6a6fa41b62a72b172b3afcdaf4f76c0775c113b8d60c55085ac;
 
-    constructor(address nuc) {
+    constructor(address payable nuc) {
         nucleus = nuc;
     }
 

@@ -1,6 +1,7 @@
 import { BigNumber as BN, BigNumberish, BytesLike } from "ethers";
 import { ethers } from "hardhat";
 import { HydrogenNucleus, MockERC20 } from "../../typechain-types";
+const { Zero, AddressZero } = ethers.constants;
 import { toBytes32 } from "../utilities/setStorage";
 import { decimalsToAmount } from "../utils/price";
 import { rightPad } from "./strings";
@@ -13,6 +14,10 @@ const ABI_ERC20_MIN = [{"inputs":[],"name":"decimals","outputs":[{"internalType"
 
 export default class HydrogenNucleusHelper {
 
+  static LOCATION_FLAG_EXTERNAL_ADDRESS = "0x0400000000000000000000000000000000000000000000000000000000000001";
+  static LOCATION_FLAG_INTERNAL_ADDRESS = "0x0400000000000000000000000000000000000000000000000000000000000002";
+  static LOCATION_FLAG_POOL             = "0x0400000000000000000000000000000000000000000000000000000000000003";
+
   static externalAddressToLocation(address: string) {
     let addr = address.substring(2).toLowerCase();
     while(addr.length < 62) addr = `0${addr}`;
@@ -20,6 +25,7 @@ export default class HydrogenNucleusHelper {
     return addr;
   }
 
+  // encode an internal address as a location
   static internalAddressToLocation(address: string) {
     let addr = address.substring(2).toLowerCase();
     while(addr.length < 62) addr = `0${addr}`;
@@ -27,6 +33,7 @@ export default class HydrogenNucleusHelper {
     return addr;
   }
 
+  // encode a poolID as a location
   static poolIDtoLocation(poolID: BigNumberish) {
     let num = BN.from(poolID).toHexString();
     num = num.substring(2);
@@ -35,6 +42,7 @@ export default class HydrogenNucleusHelper {
     return num;
   }
 
+  // create a human readable description of a location
   static locationToString(loc: string) {
     if(loc.length != 66) return `invalid location ${loc}`;
     if(loc.substring(0,4) === "0x01") {
@@ -51,6 +59,29 @@ export default class HydrogenNucleusHelper {
     } else return `invalid location ${loc}`;
   }
 
+  // poolID functions
+
+  // returns true if the given string parses to a valid poolID
+  // does not determine if the pool exists or not
+  static poolIDisValid(poolID: string) {
+    try {
+      if(!poolID || poolID.length <= 3) return false
+      const c = poolID[0]
+      if(c == '-' || c == '0') return false
+      const poolType = poolID.substring(poolID.length-3)
+      if(poolType != '001' && poolType != '002') return false
+      const num = BN.from(poolID)
+      const str = num.toString()
+      if(poolID != str) return false
+      return true
+    } catch(e) {
+      return false
+    }
+  }
+
+  // exchange rate functions
+
+  // encodes an exchange rate
   static encodeExchangeRate(exchangeRateX1: BigNumberish, exchangeRateX2: BigNumberish) {
     let x1 = BN.from(exchangeRateX1);
     let x2 = BN.from(exchangeRateX2);
@@ -59,6 +90,16 @@ export default class HydrogenNucleusHelper {
     return exchangeRate;
   }
 
+  // decodes an exchange rate
+  static decodeExchangeRate(exchangeRate: BytesLike) {
+    // decode exchange rate
+    let er = BN.from(exchangeRate);
+    let x1 = er.shr(128);
+    let x2 = er.and(MaxUint128);
+    return [x1, x2];
+  }
+
+  // returns true if the exchange rate is non zero
   static exchangeRateIsNonzero(exchangeRate: BytesLike) {
     // decode exchange rate
     let er = BN.from(exchangeRate);
@@ -68,20 +109,18 @@ export default class HydrogenNucleusHelper {
     return true;
   }
 
-  static decodeExchangeRate(exchangeRate: BytesLike) {
-    // decode exchange rate
-    let er = BN.from(exchangeRate);
-    let x1 = er.shr(128);
-    let x2 = er.and(MaxUint128);
-    return [x1, x2];
+  // creates human readable descriptions of an exchange rate
+  static calculateRelativeAmounts(amountA: BigNumberish, decimalsA: number, amountB: BigNumberish, decimalsB: number) {
+    const amountAperB = BN.from(amountA).mul(decimalsToAmount(decimalsB)).div(amountB)
+    const amountBperA = BN.from(amountB).mul(decimalsToAmount(decimalsA)).div(amountA)
+    return { amountAperB, amountBperA }
   }
+
+  // swap calculators
 
   // as market maker
   static calculateAmountA(amountB: BigNumberish, exchangeRate: BytesLike) {
-    // decode exchange rate
-    let er = BN.from(exchangeRate);
-    let x1 = er.shr(128);
-    let x2 = er.and(MaxUint128);
+    const [x1, x2] = this.decodeExchangeRate(exchangeRate);
     if(x1.lte(0) || x2.lte(0)) throw("HydrogenNucleusHelper: pool cannot exchange these tokens");
     // amountA = floor( (amountB * x1) / x2 )
     let amtB = BN.from(amountB);
@@ -91,10 +130,7 @@ export default class HydrogenNucleusHelper {
 
   // as market maker
   static calculateAmountB(amountA: BigNumberish, exchangeRate: BytesLike) {
-    // decode exchange rate
-    let er = BN.from(exchangeRate);
-    let x1 = er.shr(128);
-    let x2 = er.and(MaxUint128);
+    const [x1, x2] = this.decodeExchangeRate(exchangeRate);
     if(x1.lte(0) || x2.lte(0)) throw("HydrogenNucleusHelper: pool cannot exchange these tokens");
     // amountB = ceil( (amountA * x2) / x1 )
     let amtA = BN.from(amountA);
@@ -123,6 +159,37 @@ export default class HydrogenNucleusHelper {
     return { amountAMM, amountAMT, amountBMM, amountBFR };
   }
 
+  // swap fees
+
+  static getSwapFeeForPair(nucleusState: any, tokenA: string, tokenB: string) {
+    let feePPM = Zero
+    let receiverLocation = toBytes32(0);
+    const swapFees = nucleusState.swapFees
+    if (feePPM.eq(Zero)) {
+      try {
+        feePPM = BN.from(swapFees[tokenA][tokenB].feePPM)
+        receiverLocation = swapFees[tokenA][tokenB].receiverLocation;
+      } catch (e) {
+        1 + 1
+      }
+    }
+    if (feePPM.eq(Zero)) {
+      try {
+        feePPM = BN.from(swapFees[AddressZero][AddressZero].feePPM)
+        receiverLocation = swapFees[AddressZero][AddressZero].receiverLocation;
+      } catch (e) {
+        1 + 1
+      }
+    }
+    if (feePPM.gte(MAX_PPM)) {
+      feePPM = Zero
+      receiverLocation = toBytes32(0);
+    }
+    return { feePPM, receiverLocation }
+  }
+
+  // todo: find somewhere else for this
+  /*
   static async logPools(nucleus:any) {
     let poolCount = (await nucleus.totalSupply()).toNumber();
     console.log(`There are ${poolCount} pools`);
@@ -227,4 +294,5 @@ export default class HydrogenNucleusHelper {
       } else throw("unknown pool type")
     }
   }
+  */
 }

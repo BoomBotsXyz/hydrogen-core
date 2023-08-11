@@ -33,43 +33,33 @@ import { Errors } from "./Errors.sol";
  */
 library Locations {
 
+    // bit masks
     bytes32 internal constant MASK_LOCATION_TYPE             = 0xff00000000000000000000000000000000000000000000000000000000000000;
     bytes32 internal constant MASK_ADDRESS                   = 0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff;
     bytes32 internal constant MASK_POOL_ID                   = 0x00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
 
+    // location types
     bytes32 internal constant LOCATION_TYPE_EXTERNAL_ADDRESS = 0x0100000000000000000000000000000000000000000000000000000000000000;
     bytes32 internal constant LOCATION_TYPE_INTERNAL_ADDRESS = 0x0200000000000000000000000000000000000000000000000000000000000000;
     bytes32 internal constant LOCATION_TYPE_POOL             = 0x0300000000000000000000000000000000000000000000000000000000000000;
+    bytes32 internal constant LOCATION_TYPE_FLAGS            = 0x0400000000000000000000000000000000000000000000000000000000000000;
 
+    // flags
+    // used as a flag for identifying when msg.sender should be used
+    // useful as a transaction assembler that doesn't know msg.sender during encoding
+    bytes32 internal constant LOCATION_FLAG_EXTERNAL_ADDRESS = 0x0400000000000000000000000000000000000000000000000000000000000001;
+    bytes32 internal constant LOCATION_FLAG_INTERNAL_ADDRESS = 0x0400000000000000000000000000000000000000000000000000000000000002;
     // used as a flag for identifying cases when the pool location should be used
     // useful when the poolID is not known before the transaction is sent, primarily pool creation
-    bytes32 internal constant LOCATION_THIS_POOL             = 0x0000000000000000000000000000000000000000000000000000000000000001;
-
-    function getLocationType(bytes32 loc) internal pure returns (bytes32 locationType) {
-        return (loc & MASK_LOCATION_TYPE);
-    }
+    bytes32 internal constant LOCATION_FLAG_POOL             = 0x0400000000000000000000000000000000000000000000000000000000000003;
 
     /**
-     * @notice Validates a location. Reverts if invalid.
-     * This simply checks that token transfers to and from the location will succeed.
-     * It does not check for example if the poolID exists.
-     * @param loc The location to validate.
+     * @notice Returns the type of the location. This does not verify if the type is valid.
+     * @param loc The location to query.
+     * @return locationType The type of the location.
      */
-    function validateLocation(bytes32 loc) internal pure {
-        // solhint-disable no-empty-blocks
-        bytes32 locationType = getLocationType(loc);
-        if(locationType == LOCATION_TYPE_EXTERNAL_ADDRESS) {
-            address account = locationToAddress(loc);
-            if(account == address(0)) revert Errors.HydrogenAddressZero();
-        } else if(locationType == LOCATION_TYPE_INTERNAL_ADDRESS) {
-            address account = locationToAddress(loc);
-            if(account == address(0)) revert Errors.HydrogenAddressZero();
-        } else if(locationType == LOCATION_TYPE_POOL) {
-            // for the purpose of this test, all poolIDs are considered valid
-        } else {
-            revert Errors.HydrogenInvalidLocationType();
-        }
-        // solhint-enable no-empty-blocks
+    function getLocationType(bytes32 loc) internal pure returns (bytes32 locationType) {
+        return (loc & MASK_LOCATION_TYPE);
     }
 
     /**
