@@ -346,6 +346,28 @@ describe("HydrogenNucleus-gastoken", function () {
     });
   });
 
+  describe("double spend", function () {
+    it("cannot double spend deposit", async function () {
+      // address(this).balance is used in the first call and zero in the second call
+      let gasBalance0 = await provider.getBalance(nucleus.address);
+      let wgasBalance0 = await nucleus.getTokenBalance(wgas.address, user1InternalLocation);
+      let amount = WeiPerEther.mul(10);
+      //let tx = await nucleus.connect(user1).wrapGasToken(user1InternalLocation, {value: amount});
+      let txdata = nucleus.interface.encodeFunctionData("wrapGasToken", [user1InternalLocation])
+      let txdatas = [txdata, txdata]
+      let tx = await nucleus.connect(user1).multicall(txdatas, {value: amount})
+      let gasBalance1 = await provider.getBalance(nucleus.address);
+      let wgasBalance1 = await nucleus.getTokenBalance(wgas.address, user1InternalLocation);
+      await expect(tx).to.emit(wgas, "Transfer").withArgs(AddressZero, nucleus.address, amount);
+      await expect(tx).to.emit(wgas, "Transfer").withArgs(AddressZero, nucleus.address, 0);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1ExternalLocation, user1InternalLocation, amount);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1ExternalLocation, user1InternalLocation, 0);
+      expect(gasBalance0).eq(0);
+      expect(gasBalance1).eq(0);
+      expect(wgasBalance1.sub(wgasBalance0)).eq(amount);
+    });
+  });
+
   describe("multicall deposit and use", function () {
     it("can use with tokenTransfer()", async function () {
       let bal00 = await wgas.balanceOf(nucleus.address);

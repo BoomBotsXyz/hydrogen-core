@@ -4,28 +4,28 @@ import { all } from 'ethers-multicall-hysland-finance/dist/call';
 import { getEthBalance } from 'ethers-multicall-hysland-finance/dist/calls';
 
 export class MulticallProvider {
-    _provider: providers.Provider;
-    _multicallAddress: string;
+  _provider: providers.Provider;
+  _multicallAddress: string;
 
-    constructor(provider: providers.Provider, chainId: number) {
-      this._provider = provider;
-      this._multicallAddress = multicallAddresses[chainId];
-    }
-
-    public getEthBalance(address: string) {
-      if (!this._provider) {
-        throw new Error('Provider should be initialized before use.');
-      }
-      return getEthBalance(address, this._multicallAddress);
-    }
-
-    public async all<T extends any[] = any[]>(calls: ContractCall[]) {
-      if (!this._provider) {
-        throw new Error('Provider should be initialized before use.');
-      }
-      return all<T>(calls, this._multicallAddress, this._provider, {});
-    }
+  constructor(provider: providers.Provider, chainId: number) {
+    this._provider = provider;
+    this._multicallAddress = multicallAddresses[chainId];
   }
+
+  public getEthBalance(address: string) {
+    if (!this._provider) {
+      throw new Error('Provider should be initialized before use.');
+    }
+    return getEthBalance(address, this._multicallAddress);
+  }
+
+  public async all<T extends any[] = any[]>(calls: ContractCall[]) {
+    if (!this._provider) {
+      throw new Error('Provider should be initialized before use.');
+    }
+    return all<T>(calls, this._multicallAddress, this._provider, {});
+  }
+}
 
 const multicallAddresses: {[chainID: number]: string} = {
     1: '0xeefba1e63905ef1d7acba5a8513c70307c1ce441',

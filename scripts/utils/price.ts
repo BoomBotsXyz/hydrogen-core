@@ -6,6 +6,7 @@ const formatUnits = ethers.utils.formatUnits;
 
 import { withBackoffRetries } from "./misc";
 
+const { AddressZero, WeiPerEther, MaxUint256, Zero } = ethers.constants;
 const ETH_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
 
 // returns the balance of a holder for a list of tokens
@@ -32,7 +33,7 @@ exports.fetchBalances = fetchBalances
 // if the token does not exist returns 0
 async function fetchSupplyOrZero(token: any, blockTag: any) {
   return new Promise((resolve, reject) => {
-    withBackoffRetries(() => token.totalSupply({blockTag:blockTag})).then(resolve).catch(()=>{resolve(BN.from(0))})
+    withBackoffRetries(() => token.totalSupply({blockTag:blockTag})).then(resolve).catch(()=>{resolve(Zero)})
   })
 }
 exports.fetchSupplyOrZero = fetchSupplyOrZero
@@ -41,7 +42,7 @@ exports.fetchSupplyOrZero = fetchSupplyOrZero
 // if the token does not exist returns 0
 async function fetchBalanceOrZero(token: any, holder: any, blockTag: any) {
   return new Promise((resolve, reject) => {
-    withBackoffRetries(() => token.balanceOf(holder, {blockTag:blockTag})).then(resolve).catch(()=>{resolve(BN.from(0))})
+    withBackoffRetries(() => token.balanceOf(holder, {blockTag:blockTag})).then(resolve).catch(()=>{resolve(Zero)})
   })
 }
 exports.fetchBalanceOrZero = fetchBalanceOrZero
@@ -50,7 +51,7 @@ exports.fetchBalanceOrZero = fetchBalanceOrZero
 // if the pool does not exist returns 0
 export async function fetchReservesOrZero(pair: any, blockTag='latest') {
   return new Promise((resolve, reject) => {
-    withBackoffRetries(() => pair.getReserves({blockTag:blockTag})).then(resolve).catch(()=>{resolve({_reserve0:BN.from(0),_reserve1:BN.from(0)})})
+    withBackoffRetries(() => pair.getReserves({blockTag:blockTag})).then(resolve).catch(()=>{resolve({_reserve0:Zero,_reserve1:Zero})})
   })
 }
 exports.fetchReservesOrZero = fetchReservesOrZero

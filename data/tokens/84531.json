@@ -1,0 +1,152 @@
+[
+  {
+    "name": "Dai Stablecoin",
+    "symbol": "DAI",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0x7D691e6b03b46B5A5769299fC9a32EaC690B7abc",
+    "coingeckoID": "dai",
+    "artifact": "MockERC20PermitC",
+    "mintAmount": "10000000000000000000000000"
+  },
+  {
+    "name": "USDCoin",
+    "symbol": "USDC",
+    "decimals": 6,
+    "chainID": 84531,
+    "address": "0x35CD54a3547190056A0F690357b1B2692B90Fb00",
+    "coingeckoID": "usd-coin",
+    "artifact": "MockERC20PermitA",
+    "mintAmount": "10000000000000"
+  },
+  {
+    "name": "Tether USD",
+    "symbol": "USDT",
+    "decimals": 6,
+    "chainID": 84531,
+    "address": "0x70BF48BcfFcFcca6123fFeD4d4EC4Ec6eb31BA00",
+    "coingeckoID": "tether",
+    "artifact": "MockERC20",
+    "mintAmount": "10000000000000"
+  },
+  {
+    "name": "Dogecoin",
+    "symbol": "DOGE",
+    "decimals": 8,
+    "chainID": 84531,
+    "address": "0xFF0f9D4956f5f7f1Ea076d015f0a3c7185c5fc4f",
+    "coingeckoID": "dogecoin",
+    "artifact": "MockERC20",
+    "mintAmount": "2000000000000000"
+  },
+  {
+    "name": "Wrapped Bitcoin",
+    "symbol": "WBTC",
+    "decimals": 8,
+    "chainID": 84531,
+    "address": "0x2E6365CfB7de7F00478C02485Ca56a975369d2B8",
+    "coingeckoID": "bitcoin",
+    "artifact": "MockERC20",
+    "mintAmount": "10000000000"
+  },
+  {
+    "name": "Wrapped Ether",
+    "symbol": "WETH",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0x4200000000000000000000000000000000000006",
+    "coingeckoID": "ethereum",
+    "artifact": "MockERC20",
+    "mintAmount": "1000000000000000000000"
+  },
+  {
+    "name": "Mock Wrapped Ether",
+    "symbol": "mWETH",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0x421EcD2E7e5BfE4E5b0Aa8Bbf894Da3fadF6Dd93",
+    "coingeckoID": "ethereum",
+    "artifact": "MockERC20",
+    "mintAmount": "1000000000000000000000"
+  },
+  {
+    "name": "Frax",
+    "symbol": "FRAX",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0x1C6319Cf1F0b4b4109088B8e626D0b0aD0431253",
+    "coingeckoID": "frax",
+    "artifact": "MockERC20",
+    "mintAmount": "10000000000000000000000000"
+  },
+  {
+    "name": "Liquid staked Ether 2.0",
+    "symbol": "stETH",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0xe415166B4dFbba1fCadCECAedDEe4De266DF6Df1",
+    "coingeckoID": "staked-ether",
+    "artifact": "MockERC20",
+    "mintAmount": "1000000000000000000000"
+  },
+  {
+    "name": "Wrapped liquid staked Ether 2.0",
+    "symbol": "wstETH",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0x2d98B318998386A69782f776a96664AA41286efA",
+    "coingeckoID": "wrapped-steth",
+    "artifact": "MockERC20",
+    "mintAmount": "1000000000000000000000"
+  },
+  {
+    "name": "Rocket Pool ETH",
+    "symbol": "rETH",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0x9D668d07B45a700aEA6CaE697ac675e3C1a43091",
+    "coingeckoID": "rocket-pool-eth",
+    "artifact": "MockERC20",
+    "mintAmount": "1000000000000000000000"
+  },
+  {
+    "name": "Frax Ether",
+    "symbol": "frxETH",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0xfE9d41Bd9ccCAaf80a3905dc23Db2ddcAd015f73",
+    "coingeckoID": "frax-ether",
+    "artifact": "MockERC20",
+    "mintAmount": "1000000000000000000000"
+  },
+  {
+    "name": "Staked Frax Ether",
+    "symbol": "sfrxETH",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0x646833DED9ef0633f9C889F9dC8Ca8721289C538",
+    "coingeckoID": "staked-frax-ether",
+    "artifact": "MockERC20",
+    "mintAmount": "1000000000000000000000"
+  },
+  {
+    "name": "Coinbase Wrapped Staked ETH",
+    "symbol": "cbETH",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0xbAA901115eeAbC312C63dF708f4D6aB2ceb8eEbA",
+    "coingeckoID": "coinbase-wrapped-staked-eth",
+    "artifact": "MockERC20",
+    "mintAmount": "1000000000000000000000"
+  },
+  {
+    "name": "Interest Compounding ETH Index",
+    "symbol": "icETH",
+    "decimals": 18,
+    "chainID": 84531,
+    "address": "0x34173c7EEe379B45117429f2F2bB635190EAc36B",
+    "coingeckoID": "interest-compounding-eth-index",
+    "artifact": "MockERC20",
+    "mintAmount": "1000000000000000000000"
+  }
+]
