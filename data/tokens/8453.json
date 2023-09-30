@@ -1,0 +1,137 @@
+[
+  {
+    "name": "Axelar Wrapped USDT",
+    "symbol": "axlUSDT",
+    "decimals": 6,
+    "chainId": 8453,
+    "address": "0x7f5373AE26c3E8FfC4c77b7255DF7eC1A9aF52a6",
+    "coingeckoID": "tether",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "USD Coin",
+    "symbol": "USDC",
+    "decimals": 6,
+    "chainId": 8453,
+    "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "coingeckoID": "usd-coin",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "USD Base Coin",
+    "symbol": "USDbC",
+    "decimals": 6,
+    "chainId": 8453,
+    "address": "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA",
+    "coingeckoID": "usd-coin",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "Axelar Wrapped USDC",
+    "symbol": "axlUSDC",
+    "decimals": 6,
+    "chainId": 8453,
+    "address": "0xEB466342C4d449BC9f53A865D5Cb90586f405215",
+    "coingeckoID": "usd-coin",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "Dai Stablecoin",
+    "symbol": "DAI",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",
+    "coingeckoID": "dai",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "Axelar Wrapped DAI",
+    "symbol": "axlDAI",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0x5C7e299CF531eb66f2A1dF637d37AbB78e6200C7",
+    "coingeckoID": "dai",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "Axelar Wrapped FRAX",
+    "symbol": "axlFRAX",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0x406Cde76a3fD20e48bc1E0F60651e60Ae204B040",
+    "coingeckoID": "frax",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "Mai Stablecoin",
+    "symbol": "MAI",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0xbf1aeA8670D2528E08334083616dD9C5F3B087aE",
+    "coingeckoID": "mimatic",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "Axelar Wrapped WMAI",
+    "symbol": "axlWMAI",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0x88DfaAABaf06f3a41D2606EA98BC8edA109AbeBb",
+    "coingeckoID": "mimatic",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "Magic Internet Money",
+    "symbol": "MIM",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0x4A3A6Dd60A34bB2Aba60D73B4C88315E9CeB6A3D",
+    "coingeckoID": "magic-internet-money",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "Axelar Wrapped BUSD",
+    "symbol": "axlBUSD",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0x4D84E25cEa9447581867fE9f2329B972f532Da2c",
+    "coingeckoID": "binance-usd",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "agEUR",
+    "symbol": "agEUR",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0xA61BeB4A3d02decb01039e378237032B351125B4",
+    "coingeckoID": "ageur",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "Wrapped Ether",
+    "symbol": "WETH",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0x4200000000000000000000000000000000000006",
+    "coingeckoID": "ethereum",
+    "artifact": "WrappedGasToken"
+  },
+  {
+    "name": "Coinbase Wrapped Staked ETH",
+    "symbol": "cbETH",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
+    "coingeckoID": "coinbase-wrapped-staked-eth",
+    "artifact": "ERC20"
+  },
+  {
+    "name": "Rocket Pool ETH",
+    "symbol": "rETH",
+    "decimals": 18,
+    "chainId": 8453,
+    "address": "0xB6fe221Fe9EeF5aBa221c348bA20A1Bf5e73624c",
+    "coingeckoID": "rocket-pool-eth",
+    "artifact": "ERC20"
+  }
+]

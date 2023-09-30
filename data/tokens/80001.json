@@ -1,0 +1,101 @@
+[{
+    "name": "Dai Stablecoin",
+    "symbol": "DAI",
+    "decimals": 18,
+    "chainID": 80001,
+    "address": "0xF59FD8840DC9bb2d00Fe5c0BE0EdF637ACeC77E1",
+    "coingeckoID": "dai",
+    "artifact": "MockERC20PermitC",
+    "mintAmount": "10000000000000000000000000"
+  },
+  {
+    "name": "USDCoin",
+    "symbol": "USDC",
+    "decimals": 6,
+    "chainID": 80001,
+    "address": "0xA9DC572c76Ead4197154d36bA3f4D0839353abbb",
+    "coingeckoID": "usd-coin",
+    "artifact": "MockERC20PermitA",
+    "mintAmount": "10000000000000"
+  },
+  {
+    "name": "Tether USD",
+    "symbol": "USDT",
+    "decimals": 6,
+    "chainID": 80001,
+    "address": "0x7a49D1804434Ad537e4cC0061865727b87E71cd8",
+    "coingeckoID": "tether",
+    "artifact": "MockERC20",
+    "mintAmount": "10000000000000"
+  },
+  {
+    "name": "Dogecoin",
+    "symbol": "DOGE",
+    "decimals": 8,
+    "chainID": 80001,
+    "address": "0xbb8fD2d558206E3CB68038A338718359a96e0C44",
+    "coingeckoID": "dogecoin",
+    "artifact": "MockERC20",
+    "mintAmount": "2000000000000000"
+  },
+  {
+    "name": "Wrapped Bitcoin",
+    "symbol": "WBTC",
+    "decimals": 8,
+    "chainID": 80001,
+    "address": "0x1C9b3500bF4B13BB338DC4F4d4dB1dEAF0638a1c",
+    "coingeckoID": "bitcoin",
+    "artifact": "MockERC20",
+    "mintAmount": "10000000000"
+  },
+  {
+    "name": "Wrapped Ether",
+    "symbol": "WETH",
+    "decimals": 18,
+    "chainID": 80001,
+    "address": "0x09db75630A9b2e66F220531B77080282371156FE",
+    "coingeckoID": "ethereum",
+    "artifact": "MockERC20",
+    "mintAmount": "1000000000000000000000"
+  },
+  {
+    "name": "Wrapped Matic",
+    "symbol": "WMATIC",
+    "decimals": 18,
+    "chainID": 80001,
+    "address": "0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889",
+    "coingeckoID": "matic-network",
+    "artifact": "MockERC20",
+    "mintAmount": "10000000000000000000000000"
+  },
+  {
+    "name": "Mock Wrapped Matic",
+    "symbol": "mWMATIC",
+    "decimals": 18,
+    "chainID": 80001,
+    "address": "0x9D668d07B45a700aEA6CaE697ac675e3C1a43091",
+    "coingeckoID": "matic-network",
+    "artifact": "MockERC20",
+    "mintAmount": "10000000000000000000000000"
+  },
+  {
+    "name": "Mock Wrapped Matic2",
+    "symbol": "mWMATIC2",
+    "decimals": 18,
+    "chainID": 80001,
+    "address": "0x7a2e59AdBd9Ce932018991bF28Fa688e13AD48fa",
+    "coingeckoID": "matic-network",
+    "artifact": "MockERC20",
+    "mintAmount": "10000000000000000000000000"
+  },
+  {
+    "name": "Frax",
+    "symbol": "FRAX",
+    "decimals": 18,
+    "chainID": 80001,
+    "address": "0x39FbfBa00de6f464e26f9983cB9C79A82442FaCc",
+    "coingeckoID": "frax",
+    "artifact": "MockERC20",
+    "mintAmount": "10000000000000000000000000"
+  }
+]
