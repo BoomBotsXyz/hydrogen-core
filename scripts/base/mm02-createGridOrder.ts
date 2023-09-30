@@ -2,7 +2,6 @@ import hardhat from "hardhat";
 const { ethers } = hardhat;
 const { provider } = ethers;
 import { BigNumber as BN, BigNumberish, Contract, Wallet } from "ethers";
-import axios from "axios"
 import { config as dotenv_config } from "dotenv";
 dotenv_config();
 
@@ -30,8 +29,6 @@ let NUCLEUS_ADDRESS = "0x1Caba1EaA6F14b94EF732624Db1702eA41b718ff";
 
 let tokenMetadatas = getTokensBySymbol(8453);
 
-let nucleusState: any;
-
 async function main() {
   console.log(`Using ${trader1.address} as trader1`);
 
@@ -44,10 +41,9 @@ async function main() {
 
   await verifyDeployments()
   nucleus = await ethers.getContractAt("HydrogenNucleus", NUCLEUS_ADDRESS, trader1) as HydrogenNucleus;
-  await fetchNucleusState();
 
   //await createGridOrder3002();
-  //await updateGridOrder3002()
+  await updateGridOrder3002()
 }
 
 async function verifyDeployments() {
@@ -58,12 +54,6 @@ async function verifyDeployments() {
     if(!await isDeployed(tokenMetadatas[symbols[i]].address)) nonDeploys.push(symbols[i])
   }
   if(nonDeploys.length > 0) throw new Error(`${nonDeploys.join(", ")} not deployed`);
-}
-
-async function fetchNucleusState() {
-  let url = "https://stats.hydrogendefi.xyz/state/?chainID=8453"
-  let res = await axios.get(url);
-  nucleusState = res.data;
 }
 
 async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amount:BN) {
@@ -160,7 +150,10 @@ async function updateGridOrder3002() {
 }
 
 async function verifyTradeRequests(poolID: number, tradeRequests: any[]) {
-  let currentTradeRequests = nucleusState.pools[poolID].tradeRequests
+  let poolInfo = await nucleus.getGridOrderPool(poolID)
+  let currentTradeRequests = poolInfo.tradeRequests
+  //console.log(poolInfo)
+  //console.log(currentTradeRequests)
   function getTokenSymbolOrAddress(token: string) {
     try {
       return leftPad(tokenMetadatas[token].symbol, 7) || token
@@ -171,12 +164,11 @@ async function verifyTradeRequests(poolID: number, tradeRequests: any[]) {
   function isSetCorrectly(tradeRequest: any) {
     try {
       if(!currentTradeRequests) return false
-      if(!currentTradeRequests.hasOwnProperty(tradeRequest.tokenA)) return false
-      if(!currentTradeRequests[tradeRequest.tokenA]) return false
-      if(!currentTradeRequests[tradeRequest.tokenA].hasOwnProperty(tradeRequest.tokenB)) return false
-      if(!currentTradeRequests[tradeRequest.tokenA][tradeRequest.tokenB]) return false
-      if(currentTradeRequests[tradeRequest.tokenA][tradeRequest.tokenB].exchangeRate != tradeRequest.exchangeRate) return false
-      if(currentTradeRequests[tradeRequest.tokenA][tradeRequest.tokenB].locationB != tradeRequest.locationB) return false
+      let trs = currentTradeRequests.filter(tr => tr.tokenA == tradeRequest.tokenA && tr.tokenB == tradeRequest.tokenB)
+      if(trs.length == 0) return false
+      let currentTradeRequest = trs[0]
+      if(currentTradeRequest.exchangeRate != tradeRequest.exchangeRate) return false
+      if(currentTradeRequest.locationB != tradeRequest.locationB) return false
       return true
     } catch(e) {
       return false
