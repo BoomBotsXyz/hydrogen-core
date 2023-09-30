@@ -65,7 +65,7 @@ async function decodeAndQuote1001() {
   // The swap fee in this direction is 2000 PPM or 0.2%.
   // After the swap fee the market taker will trade at 2000 / (1-0.002) = 2004.008016 USDbC/WETH
 
-  // quote
+  // quote exact output
 
   // The market taker wants to buy the full 1 WETH
   var amountAMT = WeiPerEther
@@ -73,6 +73,8 @@ async function decodeAndQuote1001() {
   //console.log(amountAMT) // 1000000000000000000
   //console.log(amountBMT) // 2004008016
   // The market taker must sell 2004.008016 USDbC to buy 1 WETH.
+
+  // quote exact input
 
   // The market taker wants to buy as much WETH as possible for 500 USDbC
   var amountBMT = WeiPerUsdc.mul(500)
