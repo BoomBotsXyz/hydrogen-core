@@ -241,6 +241,24 @@ interface IHydrogenNucleus {
         uint256 poolID
     );
 
+    struct CreateLimitOrderCompactParams {
+        address tokenA;       // the token the market maker wants to sell
+        address tokenB;       // the token the market maker wants to buy
+        uint256 amountA;      // the amount of tokenA that the market maker wants to sell
+        bytes32 exchangeRate; // the amount of tokenB the market maker will receive for each unit of tokenA sold
+    }
+
+    /**
+     * @notice Creates a new LimitOrderPool.
+     * @param params tokenA, tokenB, amountA, exchangeRate.
+     * @return poolID The ID of the newly created pool.
+     */
+    function createLimitOrderPoolCompact(
+        CreateLimitOrderCompactParams calldata params
+    ) external payable returns (
+        uint256 poolID
+    );
+
     struct UpdateLimitOrderParams {
         uint256 poolID;       // the ID of the pool to update
         bytes32 exchangeRate; // the new exchange rate of the limit order

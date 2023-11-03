@@ -227,12 +227,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
     function wrapGasToken(bytes32 receiverLocation) external payable override {
         _reentrancyGuardCheck();
         _reentrancyGuardState = NOT_ENTERABLE;
-        address wgas = _wrappedGasToken;
-        if(wgas == address(0)) revert Errors.HydrogenWrappedGasTokenNotSet();
-        uint256 amount = address(this).balance;
-        IWrappedGasToken(payable(wgas)).deposit{value:amount}();
-        _performTokenTransferTo(wgas, amount, receiverLocation);
-        emit TokensTransferred(wgas, Locations.externalAddressToLocation(msg.sender), receiverLocation, amount);
+        _wrapGasToken(receiverLocation);
         _reentrancyGuardState = ENTERABLE;
     }
 
@@ -432,6 +427,48 @@ contract HydrogenNucleus is IHydrogenNucleus {
         });
         // transfer tokens into pool
         _performTokenTransfer(params.tokenA, params.amountA, locationA, poolLocation);
+        // events
+        emit TradeRequestUpdated(poolID, params.tokenA, params.tokenB, params.exchangeRate, locationB);
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Creates a new LimitOrderPool.
+     * @param params tokenA, tokenB, amountA, exchangeRate.
+     * @return poolID The ID of the newly created pool.
+     */
+    function createLimitOrderPoolCompact(
+        CreateLimitOrderCompactParams calldata params
+    ) external payable override returns (
+        uint256 poolID
+    ) {
+        _reentrancyGuardCheck();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        // verify params
+        if(params.tokenA == params.tokenB) revert Errors.HydrogenSameToken();
+        if((params.tokenA == address(this)) || params.tokenB == address(this)) revert Errors.HydrogenSelfReferrence();
+        // calculate poolID
+        uint256 poolIndex = ++_totalSupply;
+        poolID = (poolIndex * Pools.POOL_ID_DECIMAL_OFFSET) + Pools.LIMIT_ORDER_POOL_TYPE;
+        if(poolID > uint256(Locations.MASK_POOL_ID)) revert Errors.HydrogenMaxPoolCount();
+        // mint pool token
+        emit PoolCreated(poolID);
+        _mint(msg.sender, poolID);
+        // store pool data
+        bytes32 poolLocation = Locations.poolIDtoLocation(poolID);
+        bytes32 locationB = Locations.externalAddressToLocation(msg.sender);
+        _limitOrderPoolData[poolID] = LimitOrderPoolData({
+            tokenA: params.tokenA,
+            tokenB: params.tokenB,
+            exchangeRate: params.exchangeRate,
+            locationB: locationB
+        });
+        // wrap gas token
+        _tryWrapGasToken();
+        // transfer tokens into pool
+        bytes32 src = _performTokenTransferFromSender(params.tokenA, params.amountA);
+        _performTokenTransferTo(params.tokenA, params.amountA, poolLocation);
+        emit TokensTransferred(params.tokenA, src, poolLocation, params.amountA);
         // events
         emit TradeRequestUpdated(poolID, params.tokenA, params.tokenB, params.exchangeRate, locationB);
         _reentrancyGuardState = ENTERABLE;
@@ -1326,28 +1363,51 @@ contract HydrogenNucleus is IHydrogenNucleus {
     }
 
     /**
-     * @notice Transfers the gas token from this contract to `to`.
-     * @param to The address to receive the gas token.
-     * @param amount The amount of the gas token to send.
+     * @notice Transfers tokens from `msg.sender` to `dst`.
+     * May pull from `msg.sender`'s internal and external balances as needed.
+     * @param token The address of the token to transfer.
+     * @param amount The amount of the token to transfer.
+     * @return src Where the tokens were sourced from. May be `msg.sender`'s internal or external address location.
      */
-    function _transferGasToken(address to, uint256 amount) internal {
-        // perform low level call
-        // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = payable(to).call{value: amount}("");
-        // detect error
-        if(!success) {
-            // revert
-            if (returndata.length == 0) {
-                // reason not given, use custom error
-                revert Errors.HydrogenGasTokenTransferFailed();
-            } else {
-                // reason given, bubble up
-                // solhint-disable-next-line no-inline-assembly
-                assembly {
-                    revert(add(32, returndata), mload(returndata))
-                }
+    function  _performTokenTransferFromSender(
+        address token,
+        uint256 amount
+    ) internal returns (
+        bytes32 src
+    ){
+        // try internal balance first
+        uint256 balanceInt = _tokenInternalBalanceOfAccount[msg.sender][token];
+        // if can be wholly paid by internal balance
+        if(amount <= balanceInt) {
+            // deduct
+            unchecked {
+                _tokenInternalBalanceOfAccount[msg.sender][token] = balanceInt - amount;
             }
+            // emit event
+            src = Locations.internalAddressToLocation(msg.sender);
+            // return
+            return src;
         }
+        // if must be wholly paid by external balance
+        if(balanceInt == 0) {
+            // transfer from external balance to dst
+            src = Locations.externalAddressToLocation(msg.sender);
+            _performTokenTransferFrom(token, amount, src);
+            // return
+            return src;
+        }
+        // if must be partially paid by both internal and external balance
+        // use whole of internal balance, rest from external
+        uint256 balanceExt = amount - balanceInt;
+        bytes32 externalLocation = Locations.externalAddressToLocation(msg.sender);
+        bytes32 internalLocation = Locations.internalAddressToLocation(msg.sender);
+        // transfer from external balance to internal balance
+        _performTokenTransferFrom(token, balanceExt, externalLocation);
+        emit TokensTransferred(token, externalLocation, internalLocation, balanceExt);
+        // transfer from internal balance
+        _tokenInternalBalanceOfAccount[msg.sender][token] = 0;
+        src = internalLocation;
+        return src;
     }
 
     /**
@@ -1400,6 +1460,9 @@ contract HydrogenNucleus is IHydrogenNucleus {
         }
     }
 
+    /***************************************
+    GAS TOKEN HELPER FUNCTIONS
+    ***************************************/
 
     /**
      * @notice Reverts if `addr` cannot be used as a token or a token holder.
@@ -1409,6 +1472,75 @@ contract HydrogenNucleus is IHydrogenNucleus {
         if(addr == address(0)) revert Errors.HydrogenAddressZero();
         if(addr == address(this)) revert Errors.HydrogenSelfReferrence();
     }
+
+    /**
+     * @notice Transfers the gas token from this contract to `to`.
+     * @param to The address to receive the gas token.
+     * @param amount The amount of the gas token to send.
+     */
+    function _transferGasToken(address to, uint256 amount) internal {
+        // perform low level call
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool success, bytes memory returndata) = payable(to).call{value: amount}("");
+        // detect error
+        if(!success) {
+            // revert
+            if (returndata.length == 0) {
+                // reason not given, use custom error
+                revert Errors.HydrogenGasTokenTransferFailed();
+            } else {
+                // reason given, bubble up
+                // solhint-disable-next-line no-inline-assembly
+                assembly {
+                    revert(add(32, returndata), mload(returndata))
+                }
+            }
+        }
+    }
+
+    /**
+     * @notice Wraps the gas token into the wrapped gas token.
+     * Wraps this contracts entire gas token balance.
+     * @param receiverLocation The location to receive the wrapped gas token.
+     */
+    function _wrapGasToken(bytes32 receiverLocation) internal {
+        // load wrapped gas token address
+        address wgas = _wrappedGasToken;
+        // revert if not set
+        if(wgas == address(0)) revert Errors.HydrogenWrappedGasTokenNotSet();
+        // fetch balance
+        uint256 amount = address(this).balance;
+        // wrap
+        IWrappedGasToken(payable(wgas)).deposit{value:amount}();
+        // transfer to receiver
+        _performTokenTransferTo(wgas, amount, receiverLocation);
+        // emit event
+        emit TokensTransferred(wgas, Locations.externalAddressToLocation(msg.sender), receiverLocation, amount);
+    }
+
+    /**
+     * @notice Wraps the gas token into the wrapped gas token.
+     * Wraps this contracts entire gas token balance.
+     * Deposits to `msg.senders`'s internal location.
+     */
+    function _tryWrapGasToken() internal {
+        // fetch balance
+        uint256 amount = address(this).balance;
+        // early exit if zero balance
+        if(amount == 0) return;
+        // load wrapped gas token address
+        address wgas = _wrappedGasToken;
+        // early exit if not set
+        if(wgas == address(0)) return;
+        // wrap
+        IWrappedGasToken(payable(wgas)).deposit{value:amount}();
+        // transfer to internal location of msg.sender
+        bytes32 receiverLocation = Locations.internalAddressToLocation(msg.sender);
+        _performTokenTransferTo(wgas, amount, receiverLocation);
+        // emit event
+        emit TokensTransferred(wgas, Locations.externalAddressToLocation(msg.sender), receiverLocation, amount);
+    }
+
     /***************************************
     POOL VIEW HELPER FUNCTIONS
     ***************************************/
