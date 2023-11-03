@@ -100,6 +100,32 @@ interface IHydrogenNucleus {
         TokenTransferParams calldata params
     ) external payable;
 
+    struct TokenTransferInParams {
+        address token;  // the address of the token to transfer
+        uint256 amount; // the amount of the token to transfer
+    }
+
+    /**
+     * @notice Transfers a token from `msg.sender`'s external address to their internal address.
+     * @param params token, amount.
+     */
+    function tokenTransferIn(
+        TokenTransferInParams calldata params
+    ) external payable;
+
+    struct TokenTransferOutParams {
+        address token;  // the address of the token to transfer
+        uint256 amount; // the amount of the token to transfer
+    }
+
+    /**
+     * @notice Transfers a token from `msg.sender`'s internal address to their external address.
+     * @param params token, amount.
+     */
+    function tokenTransferOut(
+        TokenTransferOutParams calldata params
+    ) external payable;
+
     /***************************************
     GAS TOKEN FUNCTIONS
     ***************************************/

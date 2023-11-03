@@ -174,6 +174,38 @@ contract HydrogenNucleus is IHydrogenNucleus {
         _reentrancyGuardState = ENTERABLE;
     }
 
+    /**
+     * @notice Transfers a token from `msg.sender`'s external address to their internal address.
+     * @param params token, amount.
+     */
+    function tokenTransferIn(
+        TokenTransferInParams calldata params
+    ) external payable override {
+        _reentrancyGuardCheck();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        _validateAddressCanBeUsed(params.token);
+        bytes32 src = Locations.externalAddressToLocation(msg.sender);
+        bytes32 dst = Locations.internalAddressToLocation(msg.sender);
+        _performTokenTransfer(params.token, params.amount, src, dst);
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Transfers a token from `msg.sender`'s internal address to their external address.
+     * @param params token, amount.
+     */
+    function tokenTransferOut(
+        TokenTransferOutParams calldata params
+    ) external payable override {
+        _reentrancyGuardCheck();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        _validateAddressCanBeUsed(params.token);
+        bytes32 src = Locations.internalAddressToLocation(msg.sender);
+        bytes32 dst = Locations.externalAddressToLocation(msg.sender);
+        _performTokenTransfer(params.token, params.amount, src, dst);
+        _reentrancyGuardState = ENTERABLE;
+    }
+
     /***************************************
     GAS TOKEN FUNCTIONS
     ***************************************/
