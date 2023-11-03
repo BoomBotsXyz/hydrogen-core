@@ -575,6 +575,7 @@ interface IHydrogenNucleus {
     /**
      * @notice Sets the flash loan fee for multiple tokens.
      * @param params token, feePPM, receiverLocation.
+     * Can only be called by the contract owner.
      */
     function setFlashLoanFeesForTokens(SetFlashLoanFeeForTokenParam[] calldata params) external payable;
 
@@ -620,6 +621,7 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Sets the base URI for computing tokenURI.
+     * Can only be called by the contract owner.
      * @param uri The new base URI.
      */
     function setBaseURI(string calldata uri) external payable;
@@ -632,6 +634,7 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Sets the contract URI.
+     * Can only be called by the contract owner.
      * @param uri The new contract URI.
      */
     function setContractURI(string calldata uri) external payable;
@@ -661,7 +664,7 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Starts the ownership transfer of the contract to a new account. Replaces the pending transfer if there is one. The transfer will not be finalized until the new owner calls `acceptOwnership()`.
-     * Can only be called by the current owner.
+     * Can only be called by the current contract owner.
      * @param newOwner The new owner of the contract.
      */
     function transferOwnership(address newOwner) external payable;
@@ -674,7 +677,6 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Leaves the contract without owner. It will not be possible to call `onlyOwner` functions anymore.
-     * Can only be called by the current owner.
      */
     function renounceOwnership() external payable;
 }

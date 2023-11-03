@@ -34,10 +34,6 @@ contract HydrogenNucleus is IHydrogenNucleus {
 
     // num tokens minted
     uint256 internal _totalSupply;
-    // token name
-    string internal _name;
-    // token symbol
-    string internal _symbol;
     // token ID => owner address
     mapping(uint256 => address) internal _owners;
     // owner address => token count
@@ -465,21 +461,26 @@ contract HydrogenNucleus is IHydrogenNucleus {
         balances = new uint256[](tokensLength);
         tradeRequests = new TradeRequest[](requestsLength);
         uint256 k = 0;
-        for(uint256 i = 0; i < tokensLength; i++) {
+        for(uint256 i = 0; i < tokensLength; ) {
             address tokenA = poolData.tokenIndexToAddress[i+1];
             tokens[i] = tokenA;
             balances[i] = _tokenInternalBalanceOfPool[poolID][tokenA];
-            for(uint256 j = 0; j < tokensLength; j++) {
-                if(i == j) continue;
-                address tokenB = poolData.tokenIndexToAddress[j+1];
+            for(uint256 j = 0; j < tokensLength; ) {
+                if(i == j) {
+                    unchecked { ++j; }
+                    continue;
+                }
+                unchecked { ++j; }
+                address tokenB = poolData.tokenIndexToAddress[j];
                 tradeRequests[k] = TradeRequest({
                     tokenA: tokenA,
                     tokenB: tokenB,
                     exchangeRate: poolData.tokenPairToExchangeRate[tokenA][tokenB],
                     locationB: poolData.tokenPairToLocation[tokenA][tokenB]
                 });
-                k++;
+                unchecked { ++k; }
             }
+            unchecked { ++i; }
         }
     }
 
@@ -737,8 +738,9 @@ contract HydrogenNucleus is IHydrogenNucleus {
      */
     function multicall(bytes[] calldata data) external payable returns (bytes[] memory results) {
         results = new bytes[](data.length);
-        for (uint256 i = 0; i < data.length; i++) {
+        for (uint256 i = 0; i < data.length; ) {
             results[i] = _selfDelegateCall(data[i]);
+            unchecked { ++i; }
         }
         return results;
     }
@@ -847,7 +849,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
         if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         if(msg.sender != _owner) revert Errors.HydrogenNotContractOwner();
         uint256 len = params.length;
-        for(uint256 i = 0; i < len; i++) {
+        for(uint256 i = 0; i < len; ) {
             address tokenA = params[i].tokenA;
             address tokenB = params[i].tokenB;
             uint256 feePPM = params[i].feePPM;
@@ -855,6 +857,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
             _swapFeeForPair[tokenA][tokenB] = feePPM;
             _swapFeeReceiverForPair[tokenA][tokenB] = receiverLocation;
             emit SwapFeeSetForPair(tokenA, tokenB, feePPM, receiverLocation);
+            unchecked { ++i; }
         }
     }
 
@@ -973,13 +976,14 @@ contract HydrogenNucleus is IHydrogenNucleus {
         if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
         if(msg.sender != _owner) revert Errors.HydrogenNotContractOwner();
         uint256 len = params.length;
-        for(uint256 i = 0; i < len; i++) {
+        for(uint256 i = 0; i < len; ) {
             address token = params[i].token;
             uint256 feePPM = params[i].feePPM;
             bytes32 receiverLocation = _validateOrTransformLocation(params[i].receiverLocation);
             _flashLoanFeeForToken[token] = feePPM;
             _flashLoanFeeReceiverForToken[token] = receiverLocation;
             emit FlashLoanFeeSetForToken(token, feePPM, receiverLocation);
+            unchecked { ++i; }
         }
     }
 
@@ -1485,7 +1489,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
         bytes32 poolLocation = Locations.poolIDtoLocation(poolID);
         // handle tokens
         uint256 tokenSourcesLength = tokenSources.length;
-        for(uint256 i = 0; i < tokenSourcesLength; i++) {
+        for(uint256 i = 0; i < tokenSourcesLength; ) {
             address token = tokenSources[i].token;
             if(token == address(this)) revert Errors.HydrogenSelfReferrence();
             _addTokenToGridOrderPool(poolData, token);
@@ -1493,10 +1497,11 @@ contract HydrogenNucleus is IHydrogenNucleus {
             bytes32 srcLocation = _validateOrTransformLocation(tokenSources[i].location);
             _validateLocationTransferFromAuthorization(srcLocation);
             _performTokenTransfer(token, tokenSources[i].amount, srcLocation, poolLocation);
+            unchecked { ++i; }
         }
         // handle trade requests
         uint256 tradeRequestsLength = tradeRequests.length;
-        for(uint256 i = 0; i < tradeRequestsLength; i++) {
+        for(uint256 i = 0; i < tradeRequestsLength; ) {
             // verify trade request
             address tokenA = tradeRequests[i].tokenA;
             address tokenB = tradeRequests[i].tokenB;
@@ -1515,6 +1520,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
             poolData.tokenPairToExchangeRate[tokenA][tokenB] = exchangeRate;
             poolData.tokenPairToLocation[tokenA][tokenB] = locationB;
             emit TradeRequestUpdated(poolID, tokenA, tokenB, exchangeRate, locationB);
+            unchecked { ++i; }
         }
     }
 
