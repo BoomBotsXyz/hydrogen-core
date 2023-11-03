@@ -348,15 +348,59 @@ interface IHydrogenNucleus {
         uint256 amountB;         // the amount of tokenB that the market taker will sell
         bytes32 locationA;       // the location to send tokenA to
         bytes32 locationB;       // the location to pull tokenB from
+    }
+
+    /**
+     * @notice Executes a market order.
+     * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB.
+     */
+    function executeMarketOrder(ExecuteMarketOrderParams calldata params) external payable;
+
+    struct ExecuteMarketOrderDstExtParams {
+        uint256 poolID;          // the ID of the pool to trade in
+        address tokenA;          // the token the market taker wants to buy
+        address tokenB;          // the token the market taker wants to sell
+        uint256 amountA;         // the amount of tokenA the market taker will receive
+        uint256 amountB;         // the amount of tokenB that the market taker will sell
+    }
+
+    /**
+     * @notice Executes a market order.
+     * @param params poolID, tokenA, tokenB, amountA, amountB.
+     */
+    function executeMarketOrderDstExt(ExecuteMarketOrderDstExtParams calldata params) external payable;
+
+    struct ExecuteMarketOrderDstIntParams {
+        uint256 poolID;          // the ID of the pool to trade in
+        address tokenA;          // the token the market taker wants to buy
+        address tokenB;          // the token the market taker wants to sell
+        uint256 amountA;         // the amount of tokenA the market taker will receive
+        uint256 amountB;         // the amount of tokenB that the market taker will sell
+    }
+
+    /**
+     * @notice Executes a market order.
+     * @param params poolID, tokenA, tokenB, amountA, amountB.
+     */
+    function executeMarketOrderDstInt(ExecuteMarketOrderDstIntParams calldata params) external payable;
+
+    struct ExecuteFlashSwapParams {
+        uint256 poolID;          // the ID of the pool to trade in
+        address tokenA;          // the token the market taker wants to buy
+        address tokenB;          // the token the market taker wants to sell
+        uint256 amountA;         // the amount of tokenA the market taker will receive
+        uint256 amountB;         // the amount of tokenB that the market taker will sell
+        bytes32 locationA;       // the location to send tokenA to
+        bytes32 locationB;       // the location to pull tokenB from
         address flashSwapCallee; // the receiver of the callback or address zero to not callback
         bytes callbackData;      // the data to send to the callback
     }
 
     /**
-     * @notice Executes a market order.
+     * @notice Executes a flash swap.
      * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB, flashSwapCallee, callbackData.
      */
-    function executeMarketOrder(ExecuteMarketOrderParams calldata params) external payable;
+    function executeFlashSwap(ExecuteFlashSwapParams calldata params) external payable;
 
     /***************************************
     ERC721 FUNCTIONS
@@ -721,6 +765,7 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Leaves the contract without owner. It will not be possible to call `onlyOwner` functions anymore.
+     * Can only be called by the current contract owner.
      */
     function renounceOwnership() external payable;
 }

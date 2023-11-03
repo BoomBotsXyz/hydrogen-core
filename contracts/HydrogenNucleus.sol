@@ -601,12 +601,153 @@ contract HydrogenNucleus is IHydrogenNucleus {
 
     /**
      * @notice Executes a market order.
-     * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB, flashSwapCallee, callbackData.
+     * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB.
      */
     function executeMarketOrder(ExecuteMarketOrderParams calldata params) external payable override {
-        // reentrancy guard enter
-        if(_reentrancyGuardState == NOT_ENTERABLE) revert Errors.HydrogenReentrancyGuard();
+        _reentrancyGuardCheck();
         _reentrancyGuardState = NOT_ENTERABLE;
+        // execute market order
+        _executeMarketOrder(params);
+        // reentrancy guard exit
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Executes a market order.
+     * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB.
+     */
+    function executeMarketOrderDstExt(ExecuteMarketOrderDstExtParams calldata params) external payable override {
+        _reentrancyGuardCheck();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        // execute market order
+        bytes32 loc = Locations.externalAddressToLocation(msg.sender);
+        _executeMarketOrderWithDst(params.poolID, params.tokenA, params.tokenB, params.amountA, params.amountB, loc);
+        // reentrancy guard exit
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Executes a market order.
+     * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB.
+     */
+    function executeMarketOrderDstInt(ExecuteMarketOrderDstIntParams calldata params) external payable override {
+        _reentrancyGuardCheck();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        // execute market order
+        bytes32 loc = Locations.internalAddressToLocation(msg.sender);
+        _executeMarketOrderWithDst(params.poolID, params.tokenA, params.tokenB, params.amountA, params.amountB, loc);
+        // reentrancy guard exit
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Executes a flash swap.
+     * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB, flashSwapCallee, callbackData.
+     */
+    function executeFlashSwap(ExecuteFlashSwapParams calldata params) external payable override {
+        _reentrancyGuardCheck();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        // execute flash swap
+        _executeFlashSwap(params);
+        // reentrancy guard exit
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Executes a market order.
+     * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB, flashSwapCallee, callbackData.
+     */
+    function _executeMarketOrder(ExecuteMarketOrderParams calldata params) internal {
+        // checks
+        bytes32 locationA = _validateOrTransformLocation(params.locationA);
+        bytes32 locationB = _validateOrTransformLocation(params.locationB);
+        _validateLocationTransferFromAuthorization(locationB);
+        bytes32 poolLocation = Locations.poolIDtoLocation(params.poolID);
+        if((locationA == poolLocation) || (locationB == poolLocation)) revert Errors.HydrogenPoolCannotTradeAgainstItself();
+
+        // math
+        (bytes32 exchangeRate, bytes32 poolLocationB) = _getTradeRequest(params.poolID, params.tokenA, params.tokenB);
+        (uint256 feePPM, bytes32 feeReceiver) = _getSwapFeeForPair(params.tokenA, params.tokenB);
+        uint256 amountBToFeeReceiver = (params.amountB * feePPM) / MAX_PPM;
+        uint256 amountBToPool = params.amountB - amountBToFeeReceiver;
+        if(!ExchangeRateMath.isMarketOrderAcceptable(params.amountA, amountBToPool, exchangeRate)) revert Errors.HydrogenExchangeRateDisagreement();
+        uint256 capacity = _tokenInternalBalanceOfPool[params.poolID][params.tokenA];
+        if(capacity < params.amountA) revert Errors.HydrogenInsufficientCapacity();
+
+        // effects
+        // transfer tokenA from pool to market taker
+        _performTokenTransfer(params.tokenA, params.amountA, poolLocation, locationA);
+        // transfer tokenB from market taker
+        _performTokenTransferFrom(params.tokenB, params.amountB, locationB);
+        // transfer tokenB to pool
+        _performTokenTransferTo(params.tokenB, amountBToPool, poolLocation);
+        emit TokensTransferred(params.tokenB, locationB, poolLocation, amountBToPool);
+        // transfer tokenB from pool to market maker
+        if(poolLocation != poolLocationB) {
+            _performTokenTransfer(params.tokenB, amountBToPool, poolLocation, poolLocationB);
+        }
+        // transfer tokenB to fee receiver
+        if(amountBToFeeReceiver > 0) {
+            _performTokenTransferTo(params.tokenB, amountBToFeeReceiver, feeReceiver);
+            emit TokensTransferred(params.tokenB, locationB, feeReceiver, amountBToFeeReceiver);
+        }
+
+        // emit event
+        emit MarketOrderExecuted(params.poolID, params.tokenA, params.tokenB, params.amountA, params.amountB, amountBToPool);
+    }
+
+    /**
+     * @notice Executes a market order.
+     */
+    function _executeMarketOrderWithDst(
+        uint256 poolID,
+        address tokenA,
+        address tokenB,
+        uint256 amountA,
+        uint256 amountB,
+        bytes32 locationA
+    ) internal {
+        bytes32 poolLocation = Locations.poolIDtoLocation(poolID);
+        // math
+        (bytes32 exchangeRate, bytes32 poolLocationB) = _getTradeRequest(poolID, tokenA, tokenB);
+        (uint256 feePPM, bytes32 feeReceiver) = _getSwapFeeForPair(tokenA, tokenB);
+        uint256 amountBToFeeReceiver = (amountB * feePPM) / MAX_PPM;
+        uint256 amountBToPool = amountB - amountBToFeeReceiver;
+        if(!ExchangeRateMath.isMarketOrderAcceptable(amountA, amountBToPool, exchangeRate)) revert Errors.HydrogenExchangeRateDisagreement();
+        uint256 capacity = _tokenInternalBalanceOfPool[poolID][tokenA];
+        if(capacity < amountA) revert Errors.HydrogenInsufficientCapacity();
+
+        {
+        // effects
+        // transfer tokenA from pool to market taker
+        _performTokenTransfer(tokenA, amountA, poolLocation, locationA);
+        // wrap gas token
+        _tryWrapGasToken();
+        // transfer tokenB from market taker
+        bytes32 src = _performTokenTransferFromSender(tokenB, amountB);
+        // transfer tokenB to pool
+        _performTokenTransferTo(tokenB, amountBToPool, poolLocation);
+        emit TokensTransferred(tokenB, src, poolLocation, amountBToPool);
+        // transfer tokenB from pool to market maker
+        if(poolLocation != poolLocationB) {
+            _performTokenTransfer(tokenB, amountBToPool, poolLocation, poolLocationB);
+        }
+        // transfer tokenB to fee receiver
+        if(amountBToFeeReceiver > 0) {
+            _performTokenTransferTo(tokenB, amountBToFeeReceiver, feeReceiver);
+            emit TokensTransferred(tokenB, src, feeReceiver, amountBToFeeReceiver);
+        }
+        }
+
+        // emit event
+        emit MarketOrderExecuted(poolID, tokenA, tokenB, amountA, amountB, amountBToPool);
+    }
+
+    /**
+     * @notice Executes a flash swap.
+     * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB, flashSwapCallee, callbackData.
+     */
+    function _executeFlashSwap(ExecuteFlashSwapParams calldata params) internal {
         // checks
         bytes32 locationA = _validateOrTransformLocation(params.locationA);
         bytes32 locationB = _validateOrTransformLocation(params.locationB);
@@ -645,10 +786,9 @@ contract HydrogenNucleus is IHydrogenNucleus {
             ) != FLASH_SWAP_MAGIC_VALUE) revert Errors.HydrogenFlashSwapCallbackFailed();
             // reentrancy guard take back control
             _reentrancyGuardState = NOT_ENTERABLE;
+            // double check authorization in case pool transferred
+            _validateLocationTransferFromAuthorization(locationB);
         }
-        // double check authorization in case pool transferred
-        //_validateLocationTransferFromAuthorization(params.locationB);
-        _validateLocationTransferFromAuthorization(locationB);
         // transfer tokenB from market taker
         _performTokenTransferFrom(params.tokenB, params.amountB, locationB);
         // transfer tokenB to pool
@@ -666,8 +806,6 @@ contract HydrogenNucleus is IHydrogenNucleus {
 
         // emit event
         emit MarketOrderExecuted(params.poolID, params.tokenA, params.tokenB, params.amountA, params.amountB, amountBToPool);
-        // reentrancy guard exit
-        _reentrancyGuardState = ENTERABLE;
     }
 
     /***************************************
