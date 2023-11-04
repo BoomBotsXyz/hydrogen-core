@@ -1079,6 +1079,16 @@ describe("HydrogenNucleus-reentrancy", function () {
       "canBeFlashInnerCall": true, // flash
     },
     {
+      "name": "updateGridOrderPoolCompact[2]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": false, // no deposits
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": true, // flash
+    },
+    {
       "name": "updateLimitOrderPool[0]",
       "stateMutability": "payable",
       "hasReentrancyGuard": true,
@@ -1090,6 +1100,26 @@ describe("HydrogenNucleus-reentrancy", function () {
     },
     {
       "name": "updateLimitOrderPool[1]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": true,
+    },
+    {
+      "name": "updateLimitOrderPoolCompact[0]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "updateLimitOrderPoolCompact[1]",
       "stateMutability": "payable",
       "hasReentrancyGuard": true,
       "canOnlyBeCalledOnce": false,
@@ -2270,12 +2300,33 @@ describe("HydrogenNucleus-reentrancy", function () {
             }])
           }
         }},
-        "updateLimitOrderPool[0]": { name: "updateLimitOrderPool", "wallet": user1, calldata: nucleus.interface.encodeFunctionData("updateLimitOrderPool", [{
+        "updateGridOrderPoolCompact[2]": { name: "updateGridOrderPoolCompact[2]", "wallet": user1, constructTransactionFor: async (addr: string|undefined) => {
+          if(!addr) addr = user1.address;
+          let poolID = await createGridOrderPoolFor(addr);
+          let wallet = undefined
+          if(addr == owner1.address) wallet = owner1;
+          else if(addr == owner2.address) wallet = owner2;
+          else if(addr == user1.address) wallet = user1;
+          else if(addr == user2.address) wallet = user2;
+          else if(addr == user3.address) wallet = user3;
+          else if(addr == poisonERC721Receiver.address) wallet = poisonERC721Receiver;
+          else if(addr == poisonFlashSwapCallee.address) wallet = poisonFlashSwapCallee;
+
+          return {
+            "wallet": wallet,
+            to: nucleus.address,
+            data: nucleus.interface.encodeFunctionData("updateGridOrderPoolCompact", [{
+              poolID: poolID,
+              exchangeRates: [],
+            }])
+          }
+        }},
+        "updateLimitOrderPool[0]": { name: "updateLimitOrderPool[0]", "wallet": user1, calldata: nucleus.interface.encodeFunctionData("updateLimitOrderPool", [{
           poolID: 1001,
           exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(2,3),
           locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         }]) },
-        "updateLimitOrderPool[1]": { name: "updateLimitOrderPool", "wallet": user1, constructTransactionFor: async (addr: string|undefined) => {
+        "updateLimitOrderPool[1]": { name: "updateLimitOrderPool[1]", "wallet": user1, constructTransactionFor: async (addr: string|undefined) => {
           if(!addr) addr = user1.address;
           let poolID = await createLimitOrderPoolFor(addr);
           let wallet = undefined
@@ -2294,6 +2345,31 @@ describe("HydrogenNucleus-reentrancy", function () {
               poolID: poolID,
               exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(2,3),
               locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
+            }])
+          }
+        }},
+        "updateLimitOrderPoolCompact[0]": { name: "updateLimitOrderPoolCompact[0]", "wallet": user1, calldata: nucleus.interface.encodeFunctionData("updateLimitOrderPoolCompact", [{
+          poolID: 1001,
+          exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(2,3),
+        }]) },
+        "updateLimitOrderPoolCompact[1]": { name: "updateLimitOrderPoolCompact[1]", "wallet": user1, constructTransactionFor: async (addr: string|undefined) => {
+          if(!addr) addr = user1.address;
+          let poolID = await createLimitOrderPoolFor(addr);
+          let wallet = undefined
+          if(addr == owner1.address) wallet = owner1;
+          else if(addr == owner2.address) wallet = owner2;
+          else if(addr == user1.address) wallet = user1;
+          else if(addr == user2.address) wallet = user2;
+          else if(addr == user3.address) wallet = user3;
+          else if(addr == poisonERC721Receiver.address) wallet = poisonERC721Receiver;
+          else if(addr == poisonFlashSwapCallee.address) wallet = poisonFlashSwapCallee;
+
+          return {
+            "wallet": wallet,
+            to: nucleus.address,
+            data: nucleus.interface.encodeFunctionData("updateLimitOrderPoolCompact", [{
+              poolID: poolID,
+              exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(2,3),
             }])
           }
         }},
