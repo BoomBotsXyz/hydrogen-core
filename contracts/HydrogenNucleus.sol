@@ -402,8 +402,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
         // verify params
         bytes32 locationA = _validateOrTransformLocation(params.locationA);
         _validateLocationTransferFromAuthorization(locationA);
-        if(params.tokenA == params.tokenB) revert Errors.HydrogenSameToken();
-        if((params.tokenA == address(this)) || params.tokenB == address(this)) revert Errors.HydrogenSelfReferrence();
+        _validatePairCanBeUsed(params.tokenA, params.tokenB);
         // calculate poolID
         uint256 poolIndex = ++_totalSupply;
         poolID = (poolIndex * Pools.POOL_ID_DECIMAL_OFFSET) + Pools.LIMIT_ORDER_POOL_TYPE;
@@ -445,8 +444,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
         _reentrancyGuardCheck();
         _reentrancyGuardState = NOT_ENTERABLE;
         // verify params
-        if(params.tokenA == params.tokenB) revert Errors.HydrogenSameToken();
-        if((params.tokenA == address(this)) || params.tokenB == address(this)) revert Errors.HydrogenSelfReferrence();
+        _validatePairCanBeUsed(params.tokenA, params.tokenB);
         // calculate poolID
         uint256 poolIndex = ++_totalSupply;
         poolID = (poolIndex * Pools.POOL_ID_DECIMAL_OFFSET) + Pools.LIMIT_ORDER_POOL_TYPE;
@@ -476,7 +474,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
 
     /**
      * @notice Updates a LimitOrderPool.
-     * @param params poolID, exchangeRate, locationB
+     * @param params poolID, exchangeRate, locationB.
      */
     function updateLimitOrderPool(
         UpdateLimitOrderParams calldata params
@@ -659,6 +657,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
      */
     function _executeMarketOrder(ExecuteMarketOrderParams calldata params) internal {
         // checks
+        _validatePairCanBeUsed(params.tokenA, params.tokenB);
         bytes32 locationA = _validateOrTransformLocation(params.locationA);
         bytes32 locationB = _validateOrTransformLocation(params.locationB);
         _validateLocationTransferFromAuthorization(locationB);
@@ -709,6 +708,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
     ) internal {
         bytes32 poolLocation = Locations.poolIDtoLocation(poolID);
         // math
+        _validatePairCanBeUsed(tokenA, tokenB);
         (bytes32 exchangeRate, bytes32 poolLocationB) = _getTradeRequest(poolID, tokenA, tokenB);
         (uint256 feePPM, bytes32 feeReceiver) = _getSwapFeeForPair(tokenA, tokenB);
         uint256 amountBToFeeReceiver = (amountB * feePPM) / MAX_PPM;
@@ -749,6 +749,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
      */
     function _executeFlashSwap(ExecuteFlashSwapParams calldata params) internal {
         // checks
+        _validatePairCanBeUsed(params.tokenA, params.tokenB);
         bytes32 locationA = _validateOrTransformLocation(params.locationA);
         bytes32 locationB = _validateOrTransformLocation(params.locationB);
         _validateLocationTransferFromAuthorization(locationB);
@@ -1612,6 +1613,17 @@ contract HydrogenNucleus is IHydrogenNucleus {
     }
 
     /**
+     * @notice Reverts if `tokenA` and `tokenB` cannot be used as a pair of tokens.
+     * @param tokenA The address of the first token to query.
+     * @param tokenB The address of the second token to query.
+     */
+    function _validatePairCanBeUsed(address tokenA, address tokenB) internal view {
+        _validateAddressCanBeUsed(tokenA);
+        _validateAddressCanBeUsed(tokenB);
+        if(tokenA == tokenB) revert Errors.HydrogenSameToken();
+    }
+
+    /**
      * @notice Transfers the gas token from this contract to `to`.
      * @param to The address to receive the gas token.
      * @param amount The amount of the gas token to send.
@@ -1812,7 +1824,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
         uint256 tokenSourcesLength = tokenSources.length;
         for(uint256 i = 0; i < tokenSourcesLength; ) {
             address token = tokenSources[i].token;
-            if(token == address(this)) revert Errors.HydrogenSelfReferrence();
+            _validateAddressCanBeUsed(token);
             _addTokenToGridOrderPool(poolData, token);
             // transfer tokens from source to pool
             bytes32 srcLocation = _validateOrTransformLocation(tokenSources[i].location);
@@ -1826,8 +1838,7 @@ contract HydrogenNucleus is IHydrogenNucleus {
             // verify trade request
             address tokenA = tradeRequests[i].tokenA;
             address tokenB = tradeRequests[i].tokenB;
-            if(tokenA == tokenB) revert Errors.HydrogenSameToken();
-            if((tokenA == address(this)) || tokenB == address(this)) revert Errors.HydrogenSelfReferrence();
+            _validatePairCanBeUsed(tokenA, tokenB);
             bytes32 locationB = tradeRequests[i].locationB;
             if(locationB == Locations.LOCATION_FLAG_POOL) {
                 locationB = poolLocation;
