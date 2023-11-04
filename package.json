@@ -1,11 +1,11 @@
 {
   "name": "hydrogen-core",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Smart contracts for the core of the Hydrogen protocol.",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "Hysland Finance",
+  "author": "Blue Matter Technologies Ltd.",
   "license": "none",
   "devDependencies": {
     "@ethersproject/abi": "^5.7.0",

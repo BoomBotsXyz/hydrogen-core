@@ -8,7 +8,7 @@ pragma solidity 0.8.19;
  */
 /**
  * @title IERC721Receiver
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice Interface for any contract that wants to support safeTransfers from ERC721 asset contracts.
  */
 interface IERC721Receiver {

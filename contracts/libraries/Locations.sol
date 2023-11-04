@@ -6,7 +6,7 @@ import { Errors } from "./Errors.sol";
 
 /**
  * @title Locations
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A library for handling a new primative used in Hydrogen called a "location".
  *
  * A location is a place where ERC20 tokens may be kept.

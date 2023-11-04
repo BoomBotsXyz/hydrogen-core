@@ -4,7 +4,7 @@ pragma solidity 0.8.19;
 
 /**
  * @title IHydrogenNucleus
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice The main Hydrogen contract.
  */
 interface IHydrogenNucleus {

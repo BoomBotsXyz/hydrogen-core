@@ -4,7 +4,7 @@ pragma solidity 0.8.19;
 
 /**
  * @title Errors
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A library of custom error types used in Hydrogen.
  */
 library Errors {

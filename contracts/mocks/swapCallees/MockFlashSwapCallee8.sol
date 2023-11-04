@@ -9,7 +9,7 @@ import { MockERC20 } from "./../tokens/MockERC20.sol";
 
 /**
  * @title MockFlashSwapCallee8
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock callee. Used to test flash swaps.
  *
  * This callee improperly implements the callback function, causing the tx to revert.

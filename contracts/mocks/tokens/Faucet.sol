@@ -7,7 +7,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 
 /**
  * @title Faucet
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A faucet that drips ERC20 tokens.
  *
  * This is only useful on testnet.

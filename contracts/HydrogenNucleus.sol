@@ -20,7 +20,7 @@ import { IERC20PermitC } from "./interfaces/tokens/IERC20PermitC.sol";
 
 /**
  * @title HydrogenNucleus
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice The main Hydrogen contract.
  */
 // solhint-disable max-states-count

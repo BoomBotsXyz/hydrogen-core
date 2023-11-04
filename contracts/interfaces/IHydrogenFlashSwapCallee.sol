@@ -4,7 +4,7 @@ pragma solidity 0.8.19;
 
 /**
  * @title IHydrogenFlashSwapCallee
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice
  */
 interface IHydrogenFlashSwapCallee {

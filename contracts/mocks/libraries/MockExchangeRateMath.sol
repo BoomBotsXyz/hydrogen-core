@@ -5,7 +5,7 @@ import { ExchangeRateMath } from "./../../libraries/ExchangeRateMath.sol";
 
 /**
  * @title MockExchangeRateMath
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock contract used to test ExchangeRateMath.
  */
 contract MockExchangeRateMath {

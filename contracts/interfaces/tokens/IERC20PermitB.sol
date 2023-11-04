@@ -7,7 +7,7 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 
 /**
  * @title IERC20PermitB
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice An `ERC20` token that also has the `ERC2612` permit extension.
  *
  * Multiple different implementations of `permit()` were deployed to production networks before the standard was finalized. This is NOT the finalized version.
