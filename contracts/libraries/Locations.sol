@@ -52,6 +52,8 @@ library Locations {
     // used as a flag for identifying cases when the pool location should be used
     // useful when the poolID is not known before the transaction is sent, primarily pool creation
     bytes32 internal constant LOCATION_FLAG_POOL             = 0x0400000000000000000000000000000000000000000000000000000000000003;
+    // the null location. useful for identifying when a location variable has not yet been set
+    bytes32 internal constant LOCATION_FLAG_NULL             = 0x0000000000000000000000000000000000000000000000000000000000000000;
 
     /**
      * @notice Returns the type of the location. This does not verify if the type is valid.

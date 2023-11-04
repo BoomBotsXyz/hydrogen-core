@@ -103,6 +103,10 @@ library Errors {
     // thrown when a call reenters illegally
     error HydrogenReentrancyGuard();
 
+    // other errors
+
+    // thrown when the number of elements in an array is not what was expected
+    error HydrogenLengthMismatch();
     // unknown error
     error HydrogenUnknownError();
 }

@@ -596,6 +596,31 @@ contract HydrogenNucleus is IHydrogenNucleus {
     }
 
     /**
+     * @notice Creates a new GridOrderPool.
+     * @param params tokenSources, exchange rates.
+     * @return poolID The ID of the newly created pool.
+     */
+    function createGridOrderPoolCompact(
+        CreateGridOrderCompactParams calldata params
+    ) external payable override returns (
+        uint256 poolID
+    ) {
+        _reentrancyGuardCheck();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        // calculate poolID
+        uint256 poolIndex = ++_totalSupply;
+        poolID = (poolIndex * Pools.POOL_ID_DECIMAL_OFFSET) + Pools.GRID_ORDER_POOL_TYPE;
+        if(poolID > uint256(Locations.MASK_POOL_ID)) revert Errors.HydrogenMaxPoolCount();
+        // mint pool token
+        emit PoolCreated(poolID);
+        _mint(msg.sender, poolID);
+        // store pool data
+        _createGridOrderPoolCompact(poolID, params.tokenSources);
+        _updateGridOrderPoolCompact(poolID, params.exchangeRates);
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
      * @notice Updates a GridOrderPool.
      * @param params poolID, tokenSources, tradeRequests.
      */
@@ -610,6 +635,24 @@ contract HydrogenNucleus is IHydrogenNucleus {
         if(!Pools.isGridOrderPool(params.poolID)) revert Errors.HydrogenNotAGridOrderPool();
         // store pool data
         _updateGridOrderPool(params.poolID, params.tokenSources, params.tradeRequests);
+        _reentrancyGuardState = ENTERABLE;
+    }
+
+    /**
+     * @notice Updates a GridOrderPool.
+     * @param params poolID, tokenSources, tradeRequests.
+     */
+    function updateGridOrderPoolCompact(
+        UpdateGridOrderPoolCompactParams calldata params
+    ) external payable override {
+        _reentrancyGuardCheck();
+        _reentrancyGuardState = NOT_ENTERABLE;
+        // checks
+        if(!_exists(params.poolID)) revert Errors.HydrogenPoolDoesNotExist();
+        if(_ownerOf(params.poolID) != msg.sender) revert Errors.HydrogenNotPoolOwner();
+        if(!Pools.isGridOrderPool(params.poolID)) revert Errors.HydrogenNotAGridOrderPool();
+        // store pool data
+        _updateGridOrderPoolCompact(params.poolID, params.exchangeRates);
         _reentrancyGuardState = ENTERABLE;
     }
 
@@ -1825,6 +1868,77 @@ contract HydrogenNucleus is IHydrogenNucleus {
     /***************************************
     GRID ORDER HELPER FUNCTIONS
     ***************************************/
+
+    /**
+     * @notice Helper function for createGridOrderPoolCompact.
+     * @param poolID The ID of the pool to create.
+     * @param tokenSources The list of tokens to transfer into the pool.
+     */
+    function _createGridOrderPoolCompact(
+        uint256 poolID,
+        TokenSourceCompact[] calldata tokenSources
+    ) internal {
+        // store pool data
+        GridOrderPoolData storage poolData = _gridOrderPoolData[poolID];
+        bytes32 poolLocation = Locations.poolIDtoLocation(poolID);
+        // handle tokens
+        uint256 tokenSourcesLength = tokenSources.length;
+        for(uint256 i = 0; i < tokenSourcesLength; ) {
+            address token = tokenSources[i].token;
+            _validateAddressCanBeUsed(token);
+            _addTokenToGridOrderPool(poolData, token);
+            // transfer tokens from source to pool
+            uint256 amount = tokenSources[i].amount;
+            bytes32 src = _performTokenTransferFromSender(token, amount);
+            _performTokenTransferTo(token, amount, poolLocation);
+            emit TokensTransferred(token, src, poolLocation, amount);
+            unchecked { ++i; }
+        }
+    }
+
+    /**
+     * @notice Helper function for createGridOrderPoolCompact and updateGridOrderPoolCompact.
+     * @param poolID The ID of the pool to update.
+     * @param exchangeRates The list of exchange rates to set.
+     */
+    function _updateGridOrderPoolCompact(
+        uint256 poolID,
+        bytes32[] calldata exchangeRates
+    ) internal {
+        // store pool data
+        GridOrderPoolData storage poolData = _gridOrderPoolData[poolID];
+        bytes32 poolLocation = Locations.poolIDtoLocation(poolID);
+        // handle trade requests
+        // check length
+        uint256 numTokens = poolData.numTokensInPool;
+        uint256 exchangeRatesLength = exchangeRates.length;
+        if(numTokens < 2) {
+            if(exchangeRatesLength != 0) revert Errors.HydrogenLengthMismatch();
+            return;
+        } else {
+            if(exchangeRatesLength != (numTokens * (numTokens-1))) revert Errors.HydrogenLengthMismatch();
+        }
+        // store data
+        uint256 exchangeRateIndex = 0;
+        for(uint256 tokenAIndex = 0; tokenAIndex < numTokens; ) {
+            address tokenA = poolData.tokenIndexToAddress[tokenAIndex+1];
+            for(uint256 tokenBIndex = 0; tokenBIndex < numTokens; ) {
+                if(tokenAIndex != tokenBIndex) {
+                    address tokenB = poolData.tokenIndexToAddress[tokenBIndex+1];
+                    bytes32 exchangeRate = exchangeRates[exchangeRateIndex++];
+                    poolData.tokenPairToExchangeRate[tokenA][tokenB] = exchangeRate;
+                    bytes32 locationB = poolData.tokenPairToLocation[tokenA][tokenB];
+                    if(locationB == Locations.LOCATION_FLAG_NULL) {
+                        locationB = poolLocation;
+                        poolData.tokenPairToLocation[tokenA][tokenB] = locationB;
+                    }
+                    emit TradeRequestUpdated(poolID, tokenA, tokenB, exchangeRate, locationB);
+                }
+                unchecked { ++tokenBIndex; }
+            }
+            unchecked { ++tokenAIndex; }
+        }
+    }
 
     /**
      * @notice Helper function for createGridOrderPool and updateGridOrderPool.

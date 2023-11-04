@@ -335,6 +335,27 @@ interface IHydrogenNucleus {
         uint256 poolID
     );
 
+    struct TokenSourceCompact {
+        address token;
+        uint256 amount;
+    }
+
+    struct CreateGridOrderCompactParams {
+        TokenSourceCompact[] tokenSources;
+        bytes32[] exchangeRates;
+    }
+
+    /**
+     * @notice Creates a new GridOrderPool.
+     * @param params tokenSources, exchange rates.
+     * @return poolID The ID of the newly created pool.
+     */
+    function createGridOrderPoolCompact(
+        CreateGridOrderCompactParams calldata params
+    ) external payable returns (
+        uint256 poolID
+    );
+
     struct UpdateGridOrderPoolParams {
         uint256 poolID;
         TokenSource[] tokenSources;
@@ -343,10 +364,23 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Updates a GridOrderPool.
-     * @param params poolID, tokenSources, tradeRequests.
+     * @param params poolID, exchange rates.
      */
     function updateGridOrderPool(
         UpdateGridOrderPoolParams calldata params
+    ) external payable;
+
+    struct UpdateGridOrderPoolCompactParams {
+        uint256 poolID;
+        bytes32[] exchangeRates;
+    }
+
+    /**
+     * @notice Updates a GridOrderPool.
+     * @param params poolID, tokenSources, tradeRequests.
+     */
+    function updateGridOrderPoolCompact(
+        UpdateGridOrderPoolCompactParams calldata params
     ) external payable;
 
     /***************************************
