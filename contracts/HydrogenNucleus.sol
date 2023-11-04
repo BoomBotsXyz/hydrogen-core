@@ -607,6 +607,8 @@ contract HydrogenNucleus is IHydrogenNucleus {
     ) {
         _reentrancyGuardCheck();
         _reentrancyGuardState = NOT_ENTERABLE;
+        // wrap gas token
+        _tryWrapGasToken();
         // calculate poolID
         uint256 poolIndex = ++_totalSupply;
         poolID = (poolIndex * Pools.POOL_ID_DECIMAL_OFFSET) + Pools.GRID_ORDER_POOL_TYPE;

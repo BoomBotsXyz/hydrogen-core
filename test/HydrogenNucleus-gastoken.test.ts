@@ -18,6 +18,7 @@ import { setStorageAt, toBytes32 } from "../scripts/utilities/setStorage";
 import { decimalsToAmount } from "../scripts/utils/price";
 import { deployContract } from "../scripts/utils/deployContract";
 import { abiEncodeArgs } from "../scripts/utils/strings";
+import L1DataFeeAnalyzer from "../scripts/utils/L1DataFeeAnalyzer";
 
 const { AddressZero, WeiPerEther, MaxUint256, Zero } = ethers.constants;
 const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
@@ -46,6 +47,8 @@ describe("HydrogenNucleus-gastoken", function () {
   let user2InternalLocation: string;
   let user3ExternalLocation: string;
   let user3InternalLocation: string;
+  let user4ExternalLocation: string;
+  let user4InternalLocation: string;
   let treasuryLocation: string;
 
   let nucleus: HydrogenNucleus;
@@ -76,6 +79,8 @@ describe("HydrogenNucleus-gastoken", function () {
   let networkSettings: any;
   let snapshot: BN;
 
+  let l1DataFeeAnalyzer = new L1DataFeeAnalyzer();
+
   before(async function () {
     [deployer, owner, user1, user2, user3, user4, user5] = await ethers.getSigners();
     chainID = (await provider.getNetwork()).chainId;
@@ -92,41 +97,31 @@ describe("HydrogenNucleus-gastoken", function () {
     }
     [token1, token2, token3] = tokens;
 
+    nucleus = await deployContract(deployer, "HydrogenNucleus", [owner.address]) as HydrogenNucleus;
+
+    borrower9 = await deployContract(deployer, "MockFlashLoanBorrower9", [nucleus.address]) as MockFlashLoanBorrower9;
+
+    user1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
+    user1InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
+    user2ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
+    user2InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
+    user3ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(user3.address);
+    user3InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(user3.address);
+    user4ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(user4.address);
+    user4InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(user4.address);
+    treasuryLocation = HydrogenNucleusHelper.internalAddressToLocation(owner.address);
+
     gasReceiver = await deployContract(deployer, "MockGasTokenReceiver") as MockGasTokenReceiver;
     faultyGasReceiver1 = await deployContract(deployer, "MockFaultyGasTokenReceiver1") as MockFaultyGasTokenReceiver1;
     faultyGasReceiver2 = await deployContract(deployer, "MockFaultyGasTokenReceiver2") as MockFaultyGasTokenReceiver2;
     faultyGasReceiver3 = await deployContract(deployer, "MockFaultyGasTokenReceiver3") as MockFaultyGasTokenReceiver3;
+
+    await token1.mint(user4.address, WeiPerEther.mul(10));
+    await token1.connect(user4).approve(nucleus.address, MaxUint256);
   });
 
   after(async function () {
     await provider.send("evm_revert", [snapshot]);
-  });
-
-  describe("deployment", function () {
-    it("should deploy successfully", async function () {
-      nucleus = await deployContract(deployer, "HydrogenNucleus", [owner.address]) as HydrogenNucleus;
-    });
-    it("should deploy callback contracts", async function () {
-      /*
-      swapCallee1 = await deployContract(deployer, "MockFlashSwapCallee1", [nucleus.address]) as MockFlashSwapCallee1;
-      swapCallee2 = await deployContract(deployer, "MockFlashSwapCallee2", [nucleus.address]) as MockFlashSwapCallee2;
-      swapCallee3 = await deployContract(deployer, "MockFlashSwapCallee3", [nucleus.address]) as MockFlashSwapCallee3;
-      swapCallee4 = await deployContract(deployer, "MockFlashSwapCallee4", [nucleus.address]) as MockFlashSwapCallee4;
-      swapCallee5 = await deployContract(deployer, "MockFlashSwapCallee5", [nucleus.address]) as MockFlashSwapCallee5;
-      swapCallee6 = await deployContract(deployer, "MockFlashSwapCallee6", [nucleus.address]) as MockFlashSwapCallee6;
-      swapCallee7 = await deployContract(deployer, "MockFlashSwapCallee7", [nucleus.address]) as MockFlashSwapCallee7;
-      swapCallee8 = await deployContract(deployer, "MockFlashSwapCallee8", [nucleus.address]) as MockFlashSwapCallee8;
-      */
-      borrower9 = await deployContract(deployer, "MockFlashLoanBorrower9", [nucleus.address]) as MockFlashLoanBorrower9;
-
-      user1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
-      user1InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
-      user2ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
-      user2InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
-      user3ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(user3.address);
-      user3InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(user3.address);
-      treasuryLocation = HydrogenNucleusHelper.internalAddressToLocation(owner.address);
-    });
   });
 
   describe("initial state", function () {
@@ -226,6 +221,7 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(gasBalance0).eq(3);
       expect(gasBalance1).eq(0);
       expect(wgasBalance1.sub(wgasBalance0)).eq(gasBalance0);
+      l1DataFeeAnalyzer.register("wrapGasToken", tx);
     });
     it("can wrap freshly deposited gas token", async function () {
       let gasBalance0 = await provider.getBalance(nucleus.address);
@@ -239,6 +235,7 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(gasBalance0).eq(0);
       expect(gasBalance1).eq(0);
       expect(wgasBalance1.sub(wgasBalance0)).eq(amount);
+      l1DataFeeAnalyzer.register("wrapGasToken", tx);
     });
     it("can unwrap to EOA external", async function () {
       let amount = WeiPerEther;
@@ -253,6 +250,7 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(gasBalance1).eq(0);
       expect(wgasBalance0.sub(wgasBalance1)).eq(amount);
       expect(walletGasBalance1.sub(walletGasBalance0)).eq(amount);
+      l1DataFeeAnalyzer.register("unwrapGasToken", tx);
     });
     it("can unwrap to EOA internal", async function () {
       let amount = WeiPerEther;
@@ -270,6 +268,7 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(wgasBalance0.sub(wgasBalance1)).eq(amount);
       expect(wgasBalance22.sub(wgasBalance21)).eq(amount);
       expect(walletGasBalance1.sub(walletGasBalance0)).eq(0);
+      l1DataFeeAnalyzer.register("unwrapGasToken", tx);
     });
     it("can unwrap to receiver contract", async function () {
       let amount = WeiPerEther;
@@ -285,6 +284,7 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(gasBalance1).eq(0);
       expect(wgasBalance0.sub(wgasBalance1)).eq(amount);
       expect(walletGasBalance1.sub(walletGasBalance0)).eq(amount);
+      l1DataFeeAnalyzer.register("unwrapGasToken", tx);
     });
     it("cannot unwrap to address zero", async function () {
       await expect(nucleus.connect(user1).unwrapGasToken(1, user1InternalLocation, HydrogenNucleusHelper.externalAddressToLocation(AddressZero))).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
@@ -327,6 +327,7 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(wgasBalance0.sub(wgasBalance1)).eq(amount);
       expect(wgasBalance22.sub(wgasBalance21)).eq(amount);
       expect(walletGasBalance1.sub(walletGasBalance0)).eq(0);
+      l1DataFeeAnalyzer.register("unwrapGasToken", tx);
     });
     it("can unwrap to pool", async function () {
       // not a common pattern, test anyways
@@ -346,6 +347,7 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(wgasBalance0.sub(wgasBalance1)).eq(amount);
       expect(wgasBalance22.sub(wgasBalance21)).eq(amount);
       expect(walletGasBalance1.sub(walletGasBalance0)).eq(0);
+      l1DataFeeAnalyzer.register("unwrapGasToken", tx);
     });
   });
 
@@ -368,6 +370,7 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(gasBalance0).eq(0);
       expect(gasBalance1).eq(0);
       expect(wgasBalance1.sub(wgasBalance0)).eq(amount);
+      l1DataFeeAnalyzer.register("wrapGasToken", tx);
     });
   });
 
@@ -395,6 +398,7 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(wgas, "Transfer").withArgs(AddressZero, nucleus.address, WeiPerEther.mul(3));
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1ExternalLocation, user1InternalLocation, WeiPerEther.mul(3));
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1InternalLocation, user2InternalLocation, WeiPerEther.mul(1));
+      l1DataFeeAnalyzer.register("m_wrap&transfer", tx);
     });
     it("can use with createLimitOrderPool()", async function () {
       let bal00 = await wgas.balanceOf(nucleus.address);
@@ -431,6 +435,7 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, params.tokenA, params.tokenB, params.exchangeRate, params.locationB);
+      l1DataFeeAnalyzer.register("m_wrap&createLimit", tx);
     });
     it("can use with updateLimitOrderPool()", async function () {
       let poolID = 2001
@@ -459,6 +464,7 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(wgas, "Transfer").withArgs(AddressZero, nucleus.address, amountA);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1ExternalLocation, poolLocation, amountA);
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, wgas.address, token1.address, params.exchangeRate, params.locationB);
+      l1DataFeeAnalyzer.register("m_wrap&updateLimit", tx);
     });
     it("can use with createGridOrderPool()", async function () {
       let bal00 = await wgas.balanceOf(nucleus.address);
@@ -472,6 +478,10 @@ describe("HydrogenNucleus-gastoken", function () {
           token: wgas.address,
           amount: amountA,
           location: user1InternalLocation
+        },{
+          token: token1.address,
+          amount: WeiPerEther,
+          location: user1ExternalLocation
         }],
         tradeRequests: [{
           tokenA: wgas.address,
@@ -505,6 +515,7 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, wgas.address, token1.address, exchangeRateXY, poolLocation);
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, wgas.address, exchangeRateYX, poolLocation);
+      l1DataFeeAnalyzer.register("m_wrap&createGrid", tx);
     });
     it("can use with updateGridOrderPool()", async function () {
       let poolID = 3002
@@ -545,6 +556,7 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1ExternalLocation, poolLocation, amountA);
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, wgas.address, token1.address, exchangeRateXY, poolLocation);
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, wgas.address, exchangeRateYX, poolLocation);
+      l1DataFeeAnalyzer.register("m_wrap&updateGrid", tx);
     });
     it("can use with executeMarketOrder()", async function () {
       let poolID = 1001
@@ -582,6 +594,7 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user2InternalLocation, treasuryLocation, amountBFR);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, poolLocation, user2ExternalLocation, amountAMT);
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, wgas.address, amountAMT, amountBMT, amountBMM);
+      l1DataFeeAnalyzer.register("m_wrap&marketOrder", tx);
     });
     it("can use with executeFlashSwap()", async function () {
       let poolID = 1001
@@ -621,6 +634,7 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user2InternalLocation, treasuryLocation, amountBFR);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, poolLocation, user2ExternalLocation, amountAMT);
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, wgas.address, amountAMT, amountBMT, amountBMM);
+      l1DataFeeAnalyzer.register("m_wrap&flashSwap", tx);
     });
     it("can use with flashLoan()", async function () {
       // not a common pattern, test anyways
@@ -641,6 +655,7 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(bal11.sub(bal10)).eq(0)
       expect(bal31.sub(bal30)).eq(WeiPerEther.mul(1))
       expect(await provider.getBalance(nucleus.address)).eq(0)
+      l1DataFeeAnalyzer.register("m_wrap&flashLoan", tx);
     });
   });
 
@@ -676,11 +691,52 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(bal30.sub(bal31)).eq(WeiPerEther.mul(3))
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, poolLocation, user1InternalLocation, WeiPerEther.mul(3));
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1InternalLocation, user2ExternalLocation, WeiPerEther.mul(2));
+      l1DataFeeAnalyzer.register("m_transfer&unwrap", tx);
     });
     //it("can use with createLimitOrderPool()", async function () {}); // not a common pattern. assume working if other tests pass
     //it("can use with updateLimitOrderPool()", async function () {}); // not a common pattern. assume working if other tests pass
     //it("can use with createGridOrderPool()", async function () {}); // not a common pattern. assume working if other tests pass
     //it("can use with updateGridOrderPool()", async function () {}); // not a common pattern. assume working if other tests pass
+    it("can use with executeMarketOrder()", async function () {
+      let poolID = 2001
+      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID)
+      let bal00 = await wgas.balanceOf(nucleus.address);
+      let bal10 = await nucleus.getTokenBalance(wgas.address, user1InternalLocation)
+      let bal20 = await provider.getBalance(user2.address)
+      let bal30 = await nucleus.getTokenBalance(wgas.address, poolLocation)
+      let pool = await nucleus.getLimitOrderPool(poolID)
+      let amountBMT = WeiPerEther.mul(1)
+      let { amountAMM, amountAMT, amountBMM, amountBFR } = HydrogenNucleusHelper.calculateMarketOrderExactBMT(amountBMT, pool.exchangeRate, 2000)
+      let params = {
+        poolID,
+        tokenA: wgas.address,
+        tokenB: token1.address,
+        amountA: amountAMT,
+        amountB: amountBMT,
+        locationA: user1InternalLocation,
+        locationB: user1ExternalLocation,
+      }
+      let txdata0 = nucleus.interface.encodeFunctionData("executeMarketOrder", [params])
+      let txdata1 = nucleus.interface.encodeFunctionData("unwrapGasToken", [amountAMT, user1InternalLocation, user2ExternalLocation])
+      let txdatas = [txdata0, txdata1]
+      let tx = await nucleus.connect(user1).multicall(txdatas, { value: 0 })
+      let bal01 = await wgas.balanceOf(nucleus.address);
+      let bal11 = await nucleus.getTokenBalance(wgas.address, user1InternalLocation)
+      let bal21 = await provider.getBalance(user2.address)
+      let bal31 = await nucleus.getTokenBalance(wgas.address, poolLocation)
+      expect(bal00.sub(bal01)).eq(amountAMT)
+      expect(bal11.sub(bal10)).eq(0)
+      expect(bal21.sub(bal20)).eq(amountAMT)
+      expect(bal30.sub(bal31)).eq(amountAMT)
+      expect(await provider.getBalance(nucleus.address)).eq(0)
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, poolLocation, user1InternalLocation, amountAMT);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, user1ExternalLocation, poolLocation, amountBMM);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, user1ExternalLocation, treasuryLocation, amountBFR);
+      await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, wgas.address, token1.address, amountAMT, amountBMT, amountBMM);
+      await expect(tx).to.emit(wgas, "Transfer").withArgs(nucleus.address, AddressZero, amountAMT);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1InternalLocation, user2ExternalLocation, amountAMT);
+      l1DataFeeAnalyzer.register("m_marketOrder&unwrap", tx);
+    });
     it("can use with executeFlashSwap()", async function () {
       let poolID = 2001
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID)
@@ -721,6 +777,7 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, wgas.address, token1.address, amountAMT, amountBMT, amountBMM);
       await expect(tx).to.emit(wgas, "Transfer").withArgs(nucleus.address, AddressZero, amountAMT);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1InternalLocation, user2ExternalLocation, amountAMT);
+      l1DataFeeAnalyzer.register("m_flashSwap&unwrap", tx);
     });
     it("can use with flashLoan()", async function () {
       await user1.sendTransaction({to: borrower9.address, value: WeiPerEther.mul(3)});
@@ -744,6 +801,7 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(bal21.sub(bal20)).eq(WeiPerEther.mul(2))
       expect(bal31.sub(bal30)).eq(WeiPerEther.mul(1))
       expect(await provider.getBalance(nucleus.address)).eq(0)
+      l1DataFeeAnalyzer.register("m_flashLoan&unwrap", tx);
     });
   });
 
@@ -803,40 +861,11 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
       let locationB = HydrogenNucleusHelper.externalAddressToLocation(user1.address);
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, params.tokenA, params.tokenB, params.exchangeRate, locationB);
+      l1DataFeeAnalyzer.register("a_createLimit", tx);
     });
-    /*
-    it("can use with updateLimitOrderPool()", async function () {
-      let poolID = 2001
-      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID)
+    it("can use with createGridOrderPoolCompact()", async function () {
       let bal00 = await wgas.balanceOf(nucleus.address);
-      let bal10 = await nucleus.getTokenBalance(wgas.address, user1InternalLocation)
-      let bal20 = await nucleus.getTokenBalance(wgas.address, poolLocation)
-      let txdata0 = nucleus.interface.encodeFunctionData("wrapGasToken", [poolLocation])
-      let amountA = WeiPerEther.mul(1)
-      let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther.mul(3), WeiPerEther.mul(7))
-      let params = {
-        poolID: poolID,
-        locationB: user1InternalLocation,
-        exchangeRate: exchangeRate,
-      }
-      let txdata1 = nucleus.interface.encodeFunctionData("updateLimitOrderPool", [params])
-      let txdatas = [txdata0, txdata1]
-      let tx = await nucleus.connect(user1).multicall(txdatas, { value: amountA })
-      let bal01 = await wgas.balanceOf(nucleus.address);
-      let bal11 = await nucleus.getTokenBalance(wgas.address, user1InternalLocation)
-      let bal21 = await nucleus.getTokenBalance(wgas.address, poolLocation)
-      expect(bal01.sub(bal00)).eq(amountA)
-      expect(bal11.sub(bal10)).eq(0)
-      expect(bal21.sub(bal20)).eq(amountA)
-      expect(await provider.getBalance(nucleus.address)).eq(0)
-      await expect(tx).to.emit(wgas, "Transfer").withArgs(AddressZero, nucleus.address, amountA);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1ExternalLocation, poolLocation, amountA);
-      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, wgas.address, token1.address, params.exchangeRate, params.locationB);
-    });
-    it("can use with createGridOrderPool()", async function () {
-      let bal00 = await wgas.balanceOf(nucleus.address);
-      let bal10 = await nucleus.getTokenBalance(wgas.address, user1InternalLocation)
-      let txdata0 = nucleus.interface.encodeFunctionData("wrapGasToken", [user1InternalLocation])
+      let bal10 = await nucleus.getTokenBalance(wgas.address, user4InternalLocation)
       let amountA = WeiPerEther.mul(2)
       let exchangeRateXY = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther.mul(3), WeiPerEther.mul(5).mul(10100).div(10000))
       let exchangeRateYX = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther.mul(5), WeiPerEther.mul(3).mul(10100).div(10000))
@@ -844,82 +873,31 @@ describe("HydrogenNucleus-gastoken", function () {
         tokenSources: [{
           token: wgas.address,
           amount: amountA,
-          location: user1InternalLocation
-        }],
-        tradeRequests: [{
-          tokenA: wgas.address,
-          tokenB: token1.address,
-          exchangeRate: exchangeRateXY,
-          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
         },{
-          tokenA: token1.address,
-          tokenB: wgas.address,
-          exchangeRate: exchangeRateYX,
-          locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
+          token: token1.address,
+          amount: WeiPerEther,
         }],
-        hptReceiver: user1.address
+        exchangeRates: [exchangeRateXY, exchangeRateYX]
       }
-      let txdata1 = nucleus.interface.encodeFunctionData("createGridOrderPool", [params])
-      let txdatas = [txdata0, txdata1]
-      let tx = await nucleus.connect(user1).multicall(txdatas, { value: amountA })
-      let poolID = 3002
+      let tx = await nucleus.connect(user4).createGridOrderPoolCompact(params, { value: amountA })
+      let poolID = (await nucleus.totalSupply()).toNumber() * 1000 + 2
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID)
       let bal01 = await wgas.balanceOf(nucleus.address);
-      let bal11 = await nucleus.getTokenBalance(wgas.address, user1InternalLocation)
+      let bal11 = await nucleus.getTokenBalance(wgas.address, user4InternalLocation)
       let balPool = await nucleus.getTokenBalance(wgas.address, poolLocation)
       expect(bal01.sub(bal00)).eq(amountA)
       expect(bal11.sub(bal10)).eq(0)
       expect(balPool).eq(amountA)
       expect(await provider.getBalance(nucleus.address)).eq(0)
       await expect(tx).to.emit(wgas, "Transfer").withArgs(AddressZero, nucleus.address, amountA);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1ExternalLocation, user1InternalLocation, amountA);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1InternalLocation, poolLocation, amountA);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user4ExternalLocation, user4InternalLocation, amountA);
+      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user4InternalLocation, poolLocation, amountA);
       await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
-      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
+      await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user4.address, poolID);
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, wgas.address, token1.address, exchangeRateXY, poolLocation);
       await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, wgas.address, exchangeRateYX, poolLocation);
+      l1DataFeeAnalyzer.register("a_createGrid", tx);
     });
-    it("can use with updateGridOrderPool()", async function () {
-      let poolID = 3002
-      let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID)
-      let bal00 = await wgas.balanceOf(nucleus.address);
-      let bal10 = await nucleus.getTokenBalance(wgas.address, user1InternalLocation)
-      let bal20 = await nucleus.getTokenBalance(wgas.address, poolLocation)
-      let txdata0 = nucleus.interface.encodeFunctionData("wrapGasToken", [poolLocation])
-      let amountA = WeiPerEther.mul(1)
-      let exchangeRateXY = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther.mul(3), WeiPerEther.mul(7).mul(10100).div(10000))
-      let exchangeRateYX = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther.mul(7), WeiPerEther.mul(3).mul(10100).div(10000))
-      let params = {
-        poolID: poolID,
-        tokenSources: [],
-        tradeRequests: [{
-          tokenA: wgas.address,
-          tokenB: token1.address,
-          exchangeRate: exchangeRateXY,
-          locationB: poolLocation
-        },{
-          tokenA: token1.address,
-          tokenB: wgas.address,
-          exchangeRate: exchangeRateYX,
-          locationB: poolLocation
-        }]
-      }
-      let txdata1 = nucleus.interface.encodeFunctionData("updateGridOrderPool", [params])
-      let txdatas = [txdata0, txdata1]
-      let tx = await nucleus.connect(user1).multicall(txdatas, { value: amountA })
-      let bal01 = await wgas.balanceOf(nucleus.address);
-      let bal11 = await nucleus.getTokenBalance(wgas.address, user1InternalLocation)
-      let bal21 = await nucleus.getTokenBalance(wgas.address, poolLocation)
-      expect(bal01.sub(bal00)).eq(amountA)
-      expect(bal11.sub(bal10)).eq(0)
-      expect(bal21.sub(bal20)).eq(amountA)
-      expect(await provider.getBalance(nucleus.address)).eq(0)
-      await expect(tx).to.emit(wgas, "Transfer").withArgs(AddressZero, nucleus.address, amountA);
-      await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user1ExternalLocation, poolLocation, amountA);
-      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, wgas.address, token1.address, exchangeRateXY, poolLocation);
-      await expect(tx).to.emit(nucleus, "TradeRequestUpdated").withArgs(poolID, token1.address, wgas.address, exchangeRateYX, poolLocation);
-    });
-    */
     it("can use with executeMarketOrderDstExt()", async function () {
       let poolID = 1001
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID)
@@ -945,8 +923,6 @@ describe("HydrogenNucleus-gastoken", function () {
       expect(bal11.sub(bal10)).eq(0)
       expect(bal21.sub(bal20)).eq(0)
       expect(await provider.getBalance(nucleus.address)).eq(0)
-      //locationA: user2ExternalLocation,
-      //locationB: user2InternalLocation,
       await expect(tx).to.emit(wgas, "Transfer").withArgs(AddressZero, nucleus.address, amountBMT);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user2ExternalLocation, user2InternalLocation, amountBMT);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user2InternalLocation, poolLocation, amountBMM);
@@ -954,6 +930,7 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user2InternalLocation, treasuryLocation, amountBFR);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, poolLocation, user2ExternalLocation, amountAMT);
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, wgas.address, amountAMT, amountBMT, amountBMM);
+      l1DataFeeAnalyzer.register("a_marketOrderDstExt", tx);
     });
     it("can use with executeMarketOrderDstInt()", async function () {
       let poolID = 1001
@@ -987,7 +964,13 @@ describe("HydrogenNucleus-gastoken", function () {
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(wgas.address, user2InternalLocation, treasuryLocation, amountBFR);
       await expect(tx).to.emit(nucleus, "TokensTransferred").withArgs(token1.address, poolLocation, user2InternalLocation, amountAMT);
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(poolID, token1.address, wgas.address, amountAMT, amountBMT, amountBMM);
+      l1DataFeeAnalyzer.register("a_marketOrderDstInt", tx);
     });
   });
 
+  describe("L1 gas fees", function () {
+    it("calculate", async function () {
+      l1DataFeeAnalyzer.analyze()
+    });
+  });
 });
