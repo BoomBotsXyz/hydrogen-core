@@ -35,6 +35,7 @@
     "@openzeppelin/contracts": "^4.9.2",
     "axios": "^0.26.1",
     "dotenv": "^16.0.3",
+    "ethers-multicall-hysland-finance": "^0.2.4",
     "hardhat-abi-exporter": "^2.10.1",
     "hardhat-contract-sizer": "^2.8.0"
   }

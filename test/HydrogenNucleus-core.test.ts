@@ -629,7 +629,7 @@ describe("HydrogenNucleus-core", function () {
         dst: HydrogenNucleusHelper.externalAddressToLocation(user1.address)
       })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
-    it("can transfer from external address to nucleus external address", async function () {
+    it("cannot transfer from external address to nucleus external address", async function () {
       await expect(nucleus.connect(user1).tokenTransfer({
         token: token1.address,
         amount: 0,
@@ -645,7 +645,7 @@ describe("HydrogenNucleus-core", function () {
         dst: HydrogenNucleusHelper.internalAddressToLocation(nucleus.address),
       })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
-    it("can transfer from internal address to nucleus external address", async function () {
+    it("cannot transfer from internal address to nucleus external address", async function () {
       await expect(nucleus.connect(user1).tokenTransfer({
         token: token1.address,
         amount: 0,
@@ -1497,7 +1497,7 @@ describe("HydrogenNucleus-core", function () {
     });
   });
 
-  describe("executeMarketOrder part 1", function () {
+  describe("executeFlashSwap part 1", function () {
     before("create more pools", async function () {
       // create pools
       // poolID 8001
@@ -1539,7 +1539,7 @@ describe("HydrogenNucleus-core", function () {
       });
     });
     it("cannot swap in non existant pool", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 0,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1552,7 +1552,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenPoolDoesNotExist");
     });
     it("cannot swap tokens not supported by pool", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token3.address,
@@ -1565,7 +1565,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeTheseTokens");
     });
     it("cannot swap tokens in reverse direction", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 1001,
         tokenA: token2.address,
         tokenB: token1.address,
@@ -1590,21 +1590,21 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      await expect(nucleus.connect(user1).executeMarketOrder(swapParams)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeTheseTokens");
+      await expect(nucleus.connect(user1).executeFlashSwap(swapParams)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeTheseTokens");
       let updateParams = {
         poolID: 3001,
         exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1, 0),
         locationB: HydrogenNucleusHelper.externalAddressToLocation(user2.address)
       }
       await nucleus.connect(user2).updateLimitOrderPool(updateParams);
-      await expect(nucleus.connect(user1).executeMarketOrder(swapParams)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeTheseTokens");
+      await expect(nucleus.connect(user1).executeFlashSwap(swapParams)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeTheseTokens");
       updateParams.exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(0, 1);
       await nucleus.connect(user2).updateLimitOrderPool(updateParams);
-      await expect(nucleus.connect(user1).executeMarketOrder(swapParams)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeTheseTokens");
+      await expect(nucleus.connect(user1).executeFlashSwap(swapParams)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeTheseTokens");
       expect(await nucleus.reentrancyGuardState()).eq(1);
     });
     it("cannot swap using funds from external address that isn't msg.sender", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1617,7 +1617,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenTransferFromAccountNotMsgSender");
     });
     it("cannot swap using funds from internal address that isn't msg.sender", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1630,7 +1630,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenTransferFromAccountNotMsgSender");
     });
     it("cannot swap using funds from nucleus external address as src", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1643,7 +1643,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("cannot swap sending funds to nucleus external address as dst", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1656,7 +1656,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("cannot swap using funds from nucleus internal address as src", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1669,7 +1669,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("cannot swap sending funds to nucleus internal address as dst", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1682,7 +1682,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("cannot swap sending funds to external address zero", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1695,7 +1695,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
     });
     it("cannot swap sending funds to internal address zero", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1710,7 +1710,7 @@ describe("HydrogenNucleus-core", function () {
     it("cannot swap using funds from external address with insufficient balance", async function () {
       let balance = await token2.balanceOf(user3.address);
       await token2.connect(user3).approve(nucleus.address, MaxUint256);
-      await expect(nucleus.connect(user3).executeMarketOrder({
+      await expect(nucleus.connect(user3).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1725,7 +1725,7 @@ describe("HydrogenNucleus-core", function () {
     it("cannot swap using funds from external address with insufficient allowance", async function () {
       await token2.mint(user3.address, WeiPerEther.mul(10));
       await token2.connect(user3).approve(nucleus.address, 0);
-      await expect(nucleus.connect(user3).executeMarketOrder({
+      await expect(nucleus.connect(user3).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1738,7 +1738,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWith("ERC20: insufficient allowance");
     });
     it("cannot swap using funds from internal address with insufficient balance", async function () {
-      await expect(nucleus.connect(user2).executeMarketOrder({
+      await expect(nucleus.connect(user2).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1751,7 +1751,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenInsufficientBalance");
     });
     it("cannot swap using funds from invalid location type", async function () {
-      await expect(nucleus.connect(user2).executeMarketOrder({
+      await expect(nucleus.connect(user2).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1764,7 +1764,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWithCustomError(nucleus, "HydrogenInvalidLocationType");
     });
     it("cannot swap and send funds to invalid location type", async function () {
-      await expect(nucleus.connect(user2).executeMarketOrder({
+      await expect(nucleus.connect(user2).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1778,7 +1778,7 @@ describe("HydrogenNucleus-core", function () {
     });
     it("pool cannot trade against itself", async function () {
       let poolID = 1001;
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1789,7 +1789,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       })).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeAgainstItself");
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1800,7 +1800,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       })).to.be.revertedWithCustomError(nucleus, "HydrogenPoolCannotTradeAgainstItself");
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1817,7 +1817,7 @@ describe("HydrogenNucleus-core", function () {
       let pool = await nucleus.getLimitOrderPool(poolID);
       let amountA = pool.amountA.add(1);
       let amountB = HydrogenNucleusHelper.calculateAmountB(amountA, pool.exchangeRate);
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1835,7 +1835,7 @@ describe("HydrogenNucleus-core", function () {
       let amountB = WeiPerEther.mul(10);
       let amountA = HydrogenNucleusHelper.calculateAmountA(amountB, pool.exchangeRate);
       amountA = amountA.add(1);
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1853,7 +1853,7 @@ describe("HydrogenNucleus-core", function () {
       let pool = await nucleus.getLimitOrderPool(poolID);
       let amountB = HydrogenNucleusHelper.calculateAmountB(amountA, pool.exchangeRate);
       amountB = amountB.sub(1);
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -1898,7 +1898,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let tx = await nucleus.connect(user2).executeFlashSwap(params);
       let balNuA2 = await token1.balanceOf(nucleus.address);
       let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
@@ -1974,7 +1974,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let tx = await nucleus.connect(user2).executeFlashSwap(params);
       let balNuA2 = await token1.balanceOf(nucleus.address);
       let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
@@ -2045,7 +2045,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user1).executeMarketOrder(params);
+      let tx = await nucleus.connect(user1).executeFlashSwap(params);
       let balNuA2 = await token2.balanceOf(nucleus.address);
       let balNuB2 = await token1.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token2.address, swapPoolLocation);
@@ -2078,7 +2078,7 @@ describe("HydrogenNucleus-core", function () {
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(swapPoolID, token2.address, token1.address, amountA, amountB, amountB);
     });
     it("cannot callback to EOA", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 4001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2091,7 +2091,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.reverted;
     });
     it("cannot callback to non callee implementer", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 4001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2104,7 +2104,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.reverted;
     });
     it("reverts if callee reverts", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 4001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2117,7 +2117,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.revertedWith("MockFlashSwapCallee2: force revert");
     });
     it("reverts if the callee does not return any value", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 4001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2130,7 +2130,7 @@ describe("HydrogenNucleus-core", function () {
       })).to.be.reverted;
     });
     it("reverts if the callee returns the wrong value", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 4001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2154,12 +2154,12 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: swapCallee3.address,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user1).executeMarketOrder(params);
+      let tx = await nucleus.connect(user1).executeFlashSwap(params);
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(4001, token1.address, token2.address, 0, 0, 0);
       await expect(tx).to.emit(swapCallee3, "Callback");
     });
     it("reverts if callee needs to produce funds but cant", async function () {
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: 4001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2187,7 +2187,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: swapCallee4.address,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user1).executeMarketOrder(params);
+      let tx = await nucleus.connect(user1).executeFlashSwap(params);
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(4001, token1.address, token2.address, amountA, amountB, amountB);
       await expect(tx).to.emit(swapCallee4, "Callback");
     });
@@ -2207,7 +2207,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: swapCallee4.address,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user1).executeMarketOrder(params);
+      let tx = await nucleus.connect(user1).executeFlashSwap(params);
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(4001, token1.address, token2.address, amountA, amountB, amountB);
       await expect(tx).to.emit(swapCallee4, "Callback");
     });
@@ -2216,7 +2216,7 @@ describe("HydrogenNucleus-core", function () {
       let pool = await nucleus.getLimitOrderPool(poolID);
       let amountB = WeiPerEther;
       let amountA = HydrogenNucleusHelper.calculateAmountA(amountB, pool.exchangeRate);
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2233,7 +2233,7 @@ describe("HydrogenNucleus-core", function () {
       let pool = await nucleus.getLimitOrderPool(poolID);
       let amountB = WeiPerEther;
       let amountA = HydrogenNucleusHelper.calculateAmountA(amountB, pool.exchangeRate);
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2244,7 +2244,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: swapCallee4.address,
         callbackData: "0x"
       })).to.be.revertedWithCustomError(nucleus, "HydrogenTransferFromAccountNotMsgSender");
-      await expect(nucleus.connect(user1).executeMarketOrder({
+      await expect(nucleus.connect(user1).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2273,7 +2273,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: swapCallee4.address,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user1).executeMarketOrder(params);
+      let tx = await nucleus.connect(user1).executeFlashSwap(params);
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(swapPoolID, token1.address, token2.address, amountA, amountB, amountB);
       await expect(tx).to.emit(swapCallee4, "Callback");
     });
@@ -2289,7 +2289,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user1).executeMarketOrder(params);
+      let tx = await nucleus.connect(user1).executeFlashSwap(params);
       await expect(tx).to.emit(nucleus, "MarketOrderExecuted").withArgs(4001, token1.address, token2.address, 0, 0, 0);
       await expect(tx).to.not.emit(swapCallee4, "Callback");
     });
@@ -2301,7 +2301,7 @@ describe("HydrogenNucleus-core", function () {
       let buyPoolID = 3001;
       expect(await nucleus.ownerOf(buyPoolID)).eq(user2.address);
       await nucleus.connect(user2).setApprovalForAll(swapCallee5.address, true);
-      await expect(nucleus.connect(user3).executeMarketOrder({
+      await expect(nucleus.connect(user3).executeFlashSwap({
         poolID: swapPoolID,
         tokenA: token3.address,
         tokenB: token1.address,
@@ -2321,7 +2321,7 @@ describe("HydrogenNucleus-core", function () {
       let sellPoolID = 3001;
       expect(await nucleus.ownerOf(sellPoolID)).eq(user2.address);
       await nucleus.connect(user2).setApprovalForAll(swapCallee6.address, true);
-      await expect(swapCallee6.connect(user2).executeMarketOrderWithCallback({
+      await expect(swapCallee6.connect(user2).executeFlashSwapWithCallback({
         poolID: swapPoolID,
         tokenA: token3.address,
         tokenB: token1.address,
@@ -2399,7 +2399,7 @@ describe("HydrogenNucleus-core", function () {
         src: userLocExt,
         dst: userLoc
       }]);
-      let txdataW = nucleus.interface.encodeFunctionData("executeMarketOrder", [{
+      let txdataW = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
         poolID: poolID5,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2410,7 +2410,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       }]);
-      let txdataX = nucleus.interface.encodeFunctionData("executeMarketOrder", [{
+      let txdataX = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
         poolID: poolID6,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2421,7 +2421,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       }]);
-      let txdataY = nucleus.interface.encodeFunctionData("executeMarketOrder", [{
+      let txdataY = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
         poolID: poolID7,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -2432,7 +2432,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       }]);
-      let txdataZ = nucleus.interface.encodeFunctionData("executeMarketOrder", [{
+      let txdataZ = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
         poolID: poolID10,
         tokenA: token3.address,
         tokenB: token1.address,
@@ -2592,7 +2592,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let tx = await nucleus.connect(user2).executeFlashSwap(params);
       let balNuA2 = await token1.balanceOf(nucleus.address);
       let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
@@ -3179,7 +3179,7 @@ describe("HydrogenNucleus-core", function () {
     });
   });
 
-  describe("executeMarketOrder part 2", function () {
+  describe("executeFlashSwap part 2", function () {
     it("can swap in a grid order", async function () {
       let poolID = 13002;
       let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
@@ -3211,7 +3211,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let tx = await nucleus.connect(user2).executeFlashSwap(params);
       let pool2 = await nucleus.getGridOrderPool(poolID);
       let balNuA2 = await token1.balanceOf(nucleus.address);
       let balNuB2 = await token2.balanceOf(nucleus.address);
@@ -3255,7 +3255,7 @@ describe("HydrogenNucleus-core", function () {
       let balMt11 = await nucleus.getTokenBalance(token1.address, mtLocation);
       let balMt21 = await nucleus.getTokenBalance(token2.address, mtLocation);
       let balMt31 = await nucleus.getTokenBalance(token3.address, mtLocation);
-      let txdataW = nucleus.interface.encodeFunctionData("executeMarketOrder", [{
+      let txdataW = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
         poolID: poolIDW,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -3266,7 +3266,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       }]);
-      let txdataX = nucleus.interface.encodeFunctionData("executeMarketOrder", [{
+      let txdataX = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
         poolID: poolIDX,
         tokenA: token3.address,
         tokenB: token1.address,
@@ -3319,7 +3319,7 @@ describe("HydrogenNucleus-core", function () {
       let balMt31 = await nucleus.getTokenBalance(token3.address, mtLocation);
       expect(amount1).lte(balPl11);
       expect(amount2).lte(balPl21);
-      let txdata0 = nucleus.interface.encodeFunctionData("executeMarketOrder", [{
+      let txdata0 = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token3.address,
@@ -3330,7 +3330,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       }]);
-      let txdata1 = nucleus.interface.encodeFunctionData("executeMarketOrder", [{
+      let txdata1 = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
         poolID: poolID,
         tokenA: token2.address,
         tokenB: token1.address,
@@ -3477,7 +3477,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let tx = await nucleus.connect(user2).executeFlashSwap(params);
       let balNuA2 = await token1.balanceOf(nucleus.address);
       let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
@@ -3685,7 +3685,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user1).executeMarketOrder(params);
+      let tx = await nucleus.connect(user1).executeFlashSwap(params);
       let balPlA2 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balPlB2 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balMtA2 = await nucleus.getTokenBalance(token2.address, mtLocationA);
@@ -3757,7 +3757,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user1).executeMarketOrder(params);
+      let tx = await nucleus.connect(user1).executeFlashSwap(params);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB2 = await nucleus.getTokenBalance(token2.address, poolLocation);
       let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -3829,7 +3829,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user5).executeMarketOrder(params);
+      let tx = await nucleus.connect(user5).executeFlashSwap(params);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
       let balPlB2 = await nucleus.getTokenBalance(token3.address, poolLocation);
       let balMtA2 = await nucleus.getTokenBalance(token1.address, mtLocationA);
@@ -4795,7 +4795,7 @@ describe("HydrogenNucleus-core", function () {
     });
   });
 
-  describe("executeMarketOrder part 2", function () {
+  describe("executeFlashSwap part 2", function () {
     it("can execute market order from flag location external address", async function () {
       let totalSupply = (await nucleus.totalSupply()).toNumber();
       let poolID = totalSupply * 1000 + 2;
@@ -4829,7 +4829,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let tx = await nucleus.connect(user2).executeFlashSwap(params);
       let balNuA2 = await token1.balanceOf(nucleus.address);
       let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
@@ -4887,7 +4887,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let tx = await nucleus.connect(user2).executeFlashSwap(params);
       let balNuA2 = await token1.balanceOf(nucleus.address);
       let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
@@ -4944,7 +4944,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let tx = await nucleus.connect(user2).executeFlashSwap(params);
       let balNuA2 = await token1.balanceOf(nucleus.address);
       let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
@@ -5002,7 +5002,7 @@ describe("HydrogenNucleus-core", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(user2).executeMarketOrder(params);
+      let tx = await nucleus.connect(user2).executeFlashSwap(params);
       let balNuA2 = await token1.balanceOf(nucleus.address);
       let balNuB2 = await token2.balanceOf(nucleus.address);
       let balPlA2 = await nucleus.getTokenBalance(token1.address, poolLocation);
@@ -5030,7 +5030,7 @@ describe("HydrogenNucleus-core", function () {
     it("cannot execute market order from flag location pool", async function () {
       let totalSupply = (await nucleus.totalSupply()).toNumber();
       let poolID = totalSupply * 1000 + 2;
-      await expect(nucleus.connect(user2).executeMarketOrder({
+      await expect(nucleus.connect(user2).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -5045,7 +5045,7 @@ describe("HydrogenNucleus-core", function () {
     it("cannot execute market order to flag location pool", async function () {
       let totalSupply = (await nucleus.totalSupply()).toNumber();
       let poolID = totalSupply * 1000 + 2;
-      await expect(nucleus.connect(user2).executeMarketOrder({
+      await expect(nucleus.connect(user2).executeFlashSwap({
         poolID: poolID,
         tokenA: token1.address,
         tokenB: token2.address,

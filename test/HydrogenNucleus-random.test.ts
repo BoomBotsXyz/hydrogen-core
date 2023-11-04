@@ -130,7 +130,7 @@ describe("HydrogenNucleus-random", function () {
         let amountBMM = HydrogenNucleusHelper.calculateAmountB(amountAMM, exchangeRate);
         amountBMM = amountBMM.sub(1);
         let amountBMT = amountBMM.mul(MAX_PPM).div(MAX_PPM.sub(feePPM));
-        await expect(nucleus.connect(user2).executeMarketOrder({
+        await expect(nucleus.connect(user2).executeFlashSwap({
           poolID: poolID,
           tokenA: tokenA.address,
           tokenB: tokenB.address,
@@ -148,7 +148,7 @@ describe("HydrogenNucleus-random", function () {
         let amountAMM = HydrogenNucleusHelper.calculateAmountA(amountBMM, exchangeRate);
         amountAMM = amountAMM.add(1);
         let amountAMT = amountAMM;
-        await expect(nucleus.connect(user2).executeMarketOrder({
+        await expect(nucleus.connect(user2).executeFlashSwap({
           poolID: poolID,
           tokenA: tokenA.address,
           tokenB: tokenB.address,
@@ -186,7 +186,7 @@ describe("HydrogenNucleus-random", function () {
           let balMtB1 = await nucleus.getTokenBalance(tokenB.address, user2InternalLocation);
           let balFrA1 = await nucleus.getTokenBalance(tokenA.address, feeReceiverLocation);
           let balFrB1 = await nucleus.getTokenBalance(tokenB.address, feeReceiverLocation);
-          let tx = await nucleus.connect(user2).executeMarketOrder({
+          let tx = await nucleus.connect(user2).executeFlashSwap({
             poolID: poolID,
             tokenA: tokenA.address,
             tokenB: tokenB.address,

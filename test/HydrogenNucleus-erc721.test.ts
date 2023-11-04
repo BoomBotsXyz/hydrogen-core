@@ -18,6 +18,7 @@ import HydrogenNucleusEventLogger from "../scripts/utils/HydrogenNucleusEventLog
 import { setStorageAt, toBytes32 } from "../scripts/utilities/setStorage";
 import { decimalsToAmount } from "../scripts/utils/price";
 import { deployContract } from "../scripts/utils/deployContract";
+import L1DataFeeAnalyzer from "../scripts/utils/L1DataFeeAnalyzer";
 
 const { AddressZero, WeiPerEther, MaxUint256 } = ethers.constants;
 const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
@@ -55,6 +56,8 @@ describe("HydrogenNucleus-erc721", function () {
   let chainID: number;
   let networkSettings: any;
   let snapshot: BN;
+
+  let l1DataFeeAnalyzer = new L1DataFeeAnalyzer();
 
   before(async function () {
     [deployer, owner, user1, user2, user3, user4] = await ethers.getSigners();
@@ -118,6 +121,12 @@ describe("HydrogenNucleus-erc721", function () {
       await expect(nucleus.getGridOrderPool(0)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolDoesNotExist");
       await expect(nucleus.getTradeRequest(0, token1.address, token2.address)).to.be.revertedWithCustomError(nucleus, "HydrogenPoolDoesNotExist");
     });
+    it("cannot fetch balanceOf address zero", async function () {
+      await expect(nucleus.balanceOf(AddressZero)).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
+    });
+    it("cannot fetch balanceOf nucleus address", async function () {
+      await expect(nucleus.balanceOf(nucleus.address)).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
+    });
   });
 
   describe("mint", function () {
@@ -132,12 +141,30 @@ describe("HydrogenNucleus-erc721", function () {
         hptReceiver: AddressZero
       })).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
     });
+    it("cannot create limit order to nucleus address", async function () {
+      await expect(nucleus.connect(user1).createLimitOrderPool({
+        tokenA: token1.address,
+        tokenB: token2.address,
+        amountA: 1,
+        exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1, 1),
+        locationA: user1ExternalLocation,
+        locationB: user1ExternalLocation,
+        hptReceiver: nucleus.address
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
+    });
     it("cannot create grid order to address zero", async function () {
       await expect(nucleus.connect(user1).createGridOrderPool({
         tokenSources: [],
         tradeRequests: [],
         hptReceiver: AddressZero
       })).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
+    });
+    it("cannot create grid order to address zero", async function () {
+      await expect(nucleus.connect(user1).createGridOrderPool({
+        tokenSources: [],
+        tradeRequests: [],
+        hptReceiver: nucleus.address
+      })).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
     });
     it("can create a limit order 1", async function () {
       let tx = await nucleus.connect(user1).createLimitOrderPool({
@@ -158,6 +185,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.ownerOf(poolID)).eq(user1.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
       await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      l1DataFeeAnalyzer.register("createLimitOrderPool", tx);
     });
     it("can create a limit order 2", async function () {
       let tx = await nucleus.connect(user1).createLimitOrderPool({
@@ -178,6 +206,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.ownerOf(poolID)).eq(user2.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user2.address, poolID);
       await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      l1DataFeeAnalyzer.register("createLimitOrderPool", tx);
     });
     it("can create a grid order 1", async function () {
       let tx = await nucleus.connect(user1).createGridOrderPool({
@@ -203,6 +232,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.ownerOf(poolID)).eq(user1.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user1.address, poolID);
       await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      l1DataFeeAnalyzer.register("createGridOrderPool", tx);
     });
     it("can create a grid order 2", async function () {
       let tx = await nucleus.connect(user1).createGridOrderPool({
@@ -228,6 +258,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.ownerOf(poolID)).eq(user2.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, user2.address, poolID);
       await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      l1DataFeeAnalyzer.register("createGridOrderPool", tx);
     });
     it("can create a limit order 3", async function () {
       // to contract, even if it doesnt support erc721 receiver
@@ -250,6 +281,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.ownerOf(poolID)).eq(receiver1.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, receiver1.address, poolID);
       await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      l1DataFeeAnalyzer.register("createLimitOrderPool", tx);
     });
     it("can create a grid order 3", async function () {
       // to contract, even if it doesnt support erc721 receiver
@@ -277,6 +309,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.ownerOf(poolID)).eq(receiver1.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(AddressZero, receiver1.address, poolID);
       await expect(tx).to.emit(nucleus, "PoolCreated").withArgs(poolID);
+      l1DataFeeAnalyzer.register("createGridOrderPool", tx);
     });
     it("can create a limit order 4", async function () {
       let tx = await nucleus.connect(user1).createLimitOrderPool({
@@ -396,7 +429,7 @@ describe("HydrogenNucleus-erc721", function () {
       await expect(nucleus.connect(user1).transferFrom(user1.address, AddressZero, 3002)).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
       await expect(nucleus.connect(user2).transferFrom(user2.address, AddressZero, 4002)).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
     });
-    it("cannot transfer to nucleus", async function () {
+    it("cannot transfer to nucleus address", async function () {
       await expect(nucleus.connect(user1).transferFrom(user1.address, nucleus.address, 1001)).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
       await expect(nucleus.connect(user2).transferFrom(user2.address, nucleus.address, 2001)).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
       await expect(nucleus.connect(user1).transferFrom(user1.address, nucleus.address, 3002)).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
@@ -412,6 +445,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user3.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(user1.address, user3.address, poolID);
+      l1DataFeeAnalyzer.register("transferFrom", tx);
     });
     it("can transfer your pool 2", async function () {
       let poolID = 3002;
@@ -423,6 +457,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user2.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(user1.address, user2.address, poolID);
+      l1DataFeeAnalyzer.register("transferFrom", tx);
     });
     it("can transfer your pool 3", async function () {
       let poolID = 3002;
@@ -434,6 +469,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user3.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(user2.address, user3.address, poolID);
+      l1DataFeeAnalyzer.register("transferFrom", tx);
     });
     it("can transfer your pool 4", async function () {
       // to contract, even if it doesnt support erc721 receiver
@@ -447,6 +483,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(receiver1.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(user1.address, receiver1.address, poolID);
+      l1DataFeeAnalyzer.register("transferFrom", tx);
     });
     it("cannot transfer a pool you used to own", async function () {
       await expect(nucleus.connect(user1).transferFrom(user3.address, user1.address, 1001)).to.be.revertedWithCustomError(nucleus, "HydrogenNotPoolOwnerOrOperator");
@@ -568,7 +605,7 @@ describe("HydrogenNucleus-erc721", function () {
       await expect(nucleus.connect(user3)["safeTransferFrom(address,address,uint256,bytes)"](user3.address, AddressZero, 3002, "0x")).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
       await expect(nucleus.connect(user2)["safeTransferFrom(address,address,uint256,bytes)"](user2.address, AddressZero, 4002, "0x")).to.be.revertedWithCustomError(nucleus, "HydrogenAddressZero");
     });
-    it("cannot transfer to nucleus", async function () {
+    it("cannot transfer to nucleus address", async function () {
       await expect(nucleus.connect(user3)["safeTransferFrom(address,address,uint256)"](user3.address, nucleus.address, 1001)).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
       await expect(nucleus.connect(user2)["safeTransferFrom(address,address,uint256)"](user2.address, nucleus.address, 2001)).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
       await expect(nucleus.connect(user3)["safeTransferFrom(address,address,uint256)"](user3.address, nucleus.address, 3002)).to.be.revertedWithCustomError(nucleus, "HydrogenSelfReferrence");
@@ -589,6 +626,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user1.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(user3.address, user1.address, poolID);
+      l1DataFeeAnalyzer.register("safeTransferFrom(3)", tx);
     });
     it("can safeTransferFrom to eoa 2", async function () {
       let poolID = 3002;
@@ -601,6 +639,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user2.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(user3.address, user2.address, poolID);
+      l1DataFeeAnalyzer.register("safeTransferFrom(4)", tx);
     });
     it("can safeTransferFrom to eoa 3", async function () {
       let poolID = 3002;
@@ -613,6 +652,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user3.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(user2.address, user3.address, poolID);
+      l1DataFeeAnalyzer.register("safeTransferFrom(4)", tx);
     });
     it("can safeTransferFrom to eoa 4", async function () {
       let poolID = 3002;
@@ -626,6 +666,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.exists(poolID)).eq(true);
       expect(await nucleus.ownerOf(poolID)).eq(user1.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(user3.address, user1.address, poolID);
+      l1DataFeeAnalyzer.register("safeTransferFrom(3)", tx);
     });
     it("cannot safeTransferFrom to not receiver contract", async function () {
       await expect(nucleus.connect(user1)["safeTransferFrom(address,address,uint256)"](user1.address, token1.address, 1001)).to.be.revertedWithCustomError(nucleus, "HydrogenNotERC721Receiver");
@@ -652,6 +693,7 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.ownerOf(poolID)).eq(receiver3.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(user1.address, receiver3.address, poolID);
       await expect(tx).to.emit(receiver3, "Callback");
+      l1DataFeeAnalyzer.register("safeTransferFrom(3)", tx);
     });
     it("can safeTransferFrom to receiver contract 2", async function () {
       let poolID = 3002;
@@ -666,9 +708,8 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.ownerOf(poolID)).eq(receiver3.address);
       await expect(tx).to.emit(nucleus, "Transfer").withArgs(user1.address, receiver3.address, poolID);
       await expect(tx).to.emit(receiver3, "Callback");
+      l1DataFeeAnalyzer.register("safeTransferFrom(4)", tx);
     });
-    //it("can safeTransferFrom to receiver contract 3", async function () {});
-    //it("", async function () {});
   });
 
   describe("approval for one", function () {
@@ -689,22 +730,26 @@ describe("HydrogenNucleus-erc721", function () {
       let tx = await nucleus.connect(user2).approve(user3.address, 2001);
       expect(await nucleus.getApproved(2001)).eq(user3.address);
       await expect(tx).to.emit(nucleus, "Approval").withArgs(user2.address, user3.address, 2001);
+      l1DataFeeAnalyzer.register("approve", tx);
     });
     it("can be revoked by pool owner", async function () {
       let tx = await nucleus.connect(user2).approve(AddressZero, 2001);
       expect(await nucleus.getApproved(2001)).eq(AddressZero);
       await expect(tx).to.emit(nucleus, "Approval").withArgs(user2.address, AddressZero, 2001);
+      l1DataFeeAnalyzer.register("approve", tx);
     });
     it("transfer zeros approval", async function () {
-      await nucleus.connect(user2).approve(user3.address, 2001);
+      let tx1 = await nucleus.connect(user2).approve(user3.address, 2001);
       expect(await nucleus.getApproved(2001)).eq(user3.address);
-      await nucleus.connect(user2).transferFrom(user2.address, user1.address, 2001);
+      let tx2 = await nucleus.connect(user2).transferFrom(user2.address, user1.address, 2001);
       expect(await nucleus.getApproved(2001)).eq(AddressZero);
+      l1DataFeeAnalyzer.register("approve", tx1);
+      l1DataFeeAnalyzer.register("transferFrom", tx2);
     });
     it("can use approval to transfer", async function () {
-      await nucleus.connect(user1).approve(user3.address, 2001);
+      let tx1 = await nucleus.connect(user1).approve(user3.address, 2001);
       expect(await nucleus.getApproved(2001)).eq(user3.address);
-      let tx = await nucleus.connect(user3).transferFrom(user1.address, user4.address, 2001);
+      let tx2 = await nucleus.connect(user3).transferFrom(user1.address, user4.address, 2001);
       expect(await nucleus.getApproved(2001)).eq(AddressZero);
       expect(await nucleus.totalSupply()).eq(7);
       expect(await nucleus.balanceOf(user1.address)).eq(0);
@@ -715,7 +760,9 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.balanceOf(receiver3.address)).eq(2);
       expect(await nucleus.exists(2001)).eq(true);
       expect(await nucleus.ownerOf(2001)).eq(user4.address);
-      await expect(tx).to.emit(nucleus, "Transfer").withArgs(user1.address, user4.address, 2001);
+      await expect(tx2).to.emit(nucleus, "Transfer").withArgs(user1.address, user4.address, 2001);
+      l1DataFeeAnalyzer.register("approve", tx1);
+      l1DataFeeAnalyzer.register("transferFrom", tx2);
     });
     it("cannot approve to pool owner", async function () {
       await expect(nucleus.connect(user4).approve(user4.address, 2001)).to.be.revertedWithCustomError(nucleus, "HydrogenApprovePoolToOwner");
@@ -734,19 +781,21 @@ describe("HydrogenNucleus-erc721", function () {
       let tx = await nucleus.connect(user1).setApprovalForAll(user2.address, true);
       expect(await nucleus.isApprovedForAll(user1.address, user2.address)).eq(true);
       await expect(tx).to.emit(nucleus, "ApprovalForAll").withArgs(user1.address, user2.address, true);
+      l1DataFeeAnalyzer.register("setApprovalForAll", tx);
     });
     it("can revoke", async function () {
       let tx = await nucleus.connect(user1).setApprovalForAll(user2.address, false);
       expect(await nucleus.isApprovedForAll(user1.address, user2.address)).eq(false);
       await expect(tx).to.emit(nucleus, "ApprovalForAll").withArgs(user1.address, user2.address, false);
+      l1DataFeeAnalyzer.register("setApprovalForAll", tx);
     });
     it("can use approval to transfer", async function () {
       let poolID = 4002;
-      await nucleus.connect(user2).setApprovalForAll(user3.address, true);
+      let tx1 = await nucleus.connect(user2).setApprovalForAll(user3.address, true);
       expect(await nucleus.isApprovedForAll(user2.address, user3.address)).eq(true);
       expect(await nucleus.isApprovedForAll(user2.address, user4.address)).eq(false);
       expect(await nucleus.getApproved(poolID)).eq(AddressZero);
-      let tx = await nucleus.connect(user3).transferFrom(user2.address, user4.address, poolID);
+      let tx2 = await nucleus.connect(user3).transferFrom(user2.address, user4.address, poolID);
       expect(await nucleus.totalSupply()).eq(7);
       expect(await nucleus.balanceOf(user1.address)).eq(0);
       expect(await nucleus.balanceOf(user2.address)).eq(0);
@@ -759,11 +808,13 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.isApprovedForAll(user2.address, user3.address)).eq(true);
       expect(await nucleus.isApprovedForAll(user2.address, user4.address)).eq(false);
       expect(await nucleus.getApproved(poolID)).eq(AddressZero);
-      await expect(tx).to.emit(nucleus, "Transfer").withArgs(user2.address, user4.address, poolID);
+      await expect(tx2).to.emit(nucleus, "Transfer").withArgs(user2.address, user4.address, poolID);
+      l1DataFeeAnalyzer.register("setApprovalForAll", tx1);
+      l1DataFeeAnalyzer.register("transferFrom", tx2);
     });
     it("can use approval to approve one then transfer", async function () {
       let poolID = 4002;
-      await nucleus.connect(user4).setApprovalForAll(user3.address, true);
+      let tx0 = await nucleus.connect(user4).setApprovalForAll(user3.address, true);
       expect(await nucleus.isApprovedForAll(user4.address, user3.address)).eq(true);
       expect(await nucleus.isApprovedForAll(user4.address, user1.address)).eq(false);
       expect(await nucleus.getApproved(poolID)).eq(AddressZero);
@@ -785,6 +836,9 @@ describe("HydrogenNucleus-erc721", function () {
       expect(await nucleus.isApprovedForAll(user4.address, user1.address)).eq(false);
       expect(await nucleus.getApproved(poolID)).eq(AddressZero);
       await expect(tx2).to.emit(nucleus, "Transfer").withArgs(user4.address, user1.address, poolID);
+      l1DataFeeAnalyzer.register("setApprovalForAll", tx0);
+      l1DataFeeAnalyzer.register("approve", tx1);
+      l1DataFeeAnalyzer.register("transferFrom", tx2);
     });
   });
 
@@ -806,8 +860,8 @@ describe("HydrogenNucleus-erc721", function () {
     });
 
     describe("tokenURI", function () {
-      let base = "https://subdomain.hysland.finance/pools/?chainID=31337&poolID=";
-      let uri = "https://subdomain.hysland.finance/pools/?chainID=31337&poolID=1001";
+      let base = "https://stats.hydrogendefi.xyz/pools/?chainID=31337&poolID=";
+      let uri = "https://stats.hydrogendefi.xyz/pools/?chainID=31337&poolID=1001";
       it("starts as id", async function () {
         expect(await nucleus.baseURI()).eq("");
         expect(await nucleus.tokenURI(1001)).eq("1001");
@@ -818,6 +872,7 @@ describe("HydrogenNucleus-erc721", function () {
       it("owner can set base", async function () {
         let tx = await nucleus.connect(owner).setBaseURI(base);
         await expect(tx).to.emit(nucleus, "BaseURISet").withArgs(base);
+        l1DataFeeAnalyzer.register("setBaseURI", tx);
       });
       it("can get new uri", async function () {
         expect(await nucleus.baseURI()).eq(base);
@@ -841,6 +896,7 @@ describe("HydrogenNucleus-erc721", function () {
       it("owner can set uri", async function () {
         let tx = await nucleus.connect(owner).setContractURI(uri);
         await expect(tx).to.emit(nucleus, "ContractURISet").withArgs(uri);
+        l1DataFeeAnalyzer.register("setContractURI", tx);
       });
       it("can get new uri", async function () {
         expect(await nucleus.contractURI()).eq(uri);
@@ -848,5 +904,9 @@ describe("HydrogenNucleus-erc721", function () {
     });
   });
 
-  //describe("", function () {});
+  describe("L1 gas fees", function () {
+    it("calculate", async function () {
+      l1DataFeeAnalyzer.analyze()
+    });
+  });
 });

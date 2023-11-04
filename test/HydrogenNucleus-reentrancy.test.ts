@@ -14,6 +14,7 @@ import { getNetworkSettings } from "../scripts/utils/getNetworkSettings";
 import HydrogenNucleusHelper from "../scripts/utils/HydrogenNucleusHelper";
 import { deployContract } from "../scripts/utils/deployContract";
 import { getERC2612PermitASignature, getERC2612PermitBSignature, getERC2612PermitCSignature, getNonce } from "../scripts/utilities/getERC2612PermitSignature";
+import L1DataFeeAnalyzer from "../scripts/utils/L1DataFeeAnalyzer";
 
 const { AddressZero, WeiPerEther, MaxUint256, Zero } = ethers.constants;
 
@@ -29,6 +30,8 @@ describe("HydrogenNucleus-reentrancy", function () {
   let user1InternalLocation: string;
   let user2ExternalLocation: string;
   let user2InternalLocation: string;
+  let user3ExternalLocation: string;
+  let user3InternalLocation: string;
 
   let nucleus: HydrogenNucleus;
 
@@ -55,6 +58,8 @@ describe("HydrogenNucleus-reentrancy", function () {
   let chainID: number;
   let networkSettings: any;
   let snapshot: BN;
+
+  let l1DataFeeAnalyzer = new L1DataFeeAnalyzer();
 
   let functionsByName: any = {};
   let functionsList: any[] = [
@@ -151,6 +156,38 @@ describe("HydrogenNucleus-reentrancy", function () {
       "canBeFlashInnerCall": true, // called by flash callback
     },
     {
+      "name": "createGridOrderPoolCompact[1]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": true, // deposit poisoned erc20 from external balance
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "createGridOrderPoolCompact[2]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": false, // no deposit
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": true, // called by flash callback
+    },
+    {
+      "name": "createGridOrderPoolCompact[3]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false, // deposit poisoned erc20 from internal balance
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
       "name": "createLimitOrderPool[0]",
       "stateMutability": "payable",
       "hasReentrancyGuard": true,
@@ -167,13 +204,57 @@ describe("HydrogenNucleus-reentrancy", function () {
       "hasReentrancyGuard": true,
       "canOnlyBeCalledOnce": false,
       "hasExternalCallToERC20": true,
-      "externalCallToERC20CanBePoisoned": true, // deposit poisoned erc20
+      "externalCallToERC20CanBePoisoned": true, // deposit poisoned erc20 from external balance
       "hasTransferGasTokenOut": false,
       "hasFlashCallOut": false,
       "canBeFlashInnerCall": false,
     },
     {
       "name": "createLimitOrderPool[2]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false, // deposit standard erc20
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": true, // called by flash callback
+    },
+    {
+      "name": "createLimitOrderPool[3]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false, // deposit poisoned erc20 from internal balance
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "createLimitOrderPoolCompact[0]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false, // deposit standard erc20
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "createLimitOrderPoolCompact[1]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": true, // deposit poisoned erc20
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "createLimitOrderPoolCompact[2]",
       "stateMutability": "payable",
       "hasReentrancyGuard": true,
       "canOnlyBeCalledOnce": false,
@@ -250,7 +331,106 @@ describe("HydrogenNucleus-reentrancy", function () {
       "canBeFlashInnerCall": true,
     },
     {
-      "name": "executeMarketOrder[3]",
+      "name": "executeMarketOrderDstExt[0]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": true,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "executeMarketOrderDstExt[1]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "executeMarketOrderDstExt[2]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": true,
+    },
+    {
+      "name": "executeMarketOrderDstInt[0]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "executeMarketOrderDstInt[1]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "executeMarketOrderDstInt[2]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": true,
+    },
+    {
+      "name": "executeFlashSwap[0]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": true,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "executeFlashSwap[1]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": true,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "executeFlashSwap[2]",
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": true,
+    },
+    {
+      "name": "executeFlashSwap[3]",
       "stateMutability": "payable",
       "hasReentrancyGuard": true,
       "canOnlyBeCalledOnce": false,
@@ -262,7 +442,7 @@ describe("HydrogenNucleus-reentrancy", function () {
       "canBeFlashInnerCall": true,
     },
     {
-      "name": "executeMarketOrder[4]",
+      "name": "executeFlashSwap[4]",
       "stateMutability": "payable",
       "hasReentrancyGuard": true,
       "canOnlyBeCalledOnce": false,
@@ -726,6 +906,61 @@ describe("HydrogenNucleus-reentrancy", function () {
       "canBeFlashInnerCall": true, // from callback
     },
     {
+      "name": "tokenTransfer[4]", // external balance to internal balance, non poison token
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "tokenTransferIn[0]", // external balance to internal balance, non poison token
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "tokenTransferIn[1]", // external balance to internal balance, poison token
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": true,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "tokenTransferOut[0]", // internal balance to external balance, non poison token
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": false,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
+      "name": "tokenTransferOut[1]", // internal balance to external balance, poison token
+      "stateMutability": "payable",
+      "hasReentrancyGuard": true,
+      "canOnlyBeCalledOnce": false,
+      "hasExternalCallToERC20": true,
+      "externalCallToERC20CanBePoisoned": true,
+      "hasTransferGasTokenOut": false,
+      "hasFlashCallOut": false,
+      "canBeFlashInnerCall": false,
+    },
+    {
       "name": "tokenURI",
       "stateMutability": "view",
       "hasReentrancyGuard": true,
@@ -910,6 +1145,8 @@ describe("HydrogenNucleus-reentrancy", function () {
     user1InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(user1.address);
     user2ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(user2.address);
     user2InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(user2.address);
+    user3ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(user3.address);
+    user3InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(user3.address);
 
     nucleus = await deployContract(deployer, "HydrogenNucleus", [owner1.address]) as HydrogenNucleus;
 
@@ -1096,6 +1333,68 @@ describe("HydrogenNucleus-reentrancy", function () {
             data,
           }
         }},
+        "createGridOrderPoolCompact[1]": { name: "createGridOrderPoolCompact[1]", constructTransaction: async () => {
+          let balI = await nucleus.getTokenBalance(poisonToken1.address, user1InternalLocation);
+          let data = nucleus.interface.encodeFunctionData("createGridOrderPoolCompact", [{
+            tokenSources: [{
+              token: poisonToken1.address,
+              amount: balI.add(1)
+            },{
+              token: token1.address,
+              amount: 1
+            }],
+            exchangeRates: [
+              HydrogenNucleusHelper.encodeExchangeRate(1, 1),
+              HydrogenNucleusHelper.encodeExchangeRate(1, 1),
+            ],
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "createGridOrderPoolCompact[2]": { name: "createGridOrderPoolCompact[2]", constructTransactionFor: async (addr: string|undefined) => {
+          if(!addr) addr = user1.address;
+          let wallet = undefined
+          if(addr == owner1.address) wallet = owner1;
+          else if(addr == owner2.address) wallet = owner2;
+          else if(addr == user1.address) wallet = user1;
+          else if(addr == user2.address) wallet = user2;
+          else if(addr == user3.address) wallet = user3;
+          else if(addr == poisonERC721Receiver.address) wallet = poisonERC721Receiver;
+          else if(addr == poisonFlashSwapCallee.address) wallet = poisonFlashSwapCallee;
+
+          let data = nucleus.interface.encodeFunctionData("createGridOrderPoolCompact", [{
+            tokenSources: [],
+            exchangeRates: [],
+          }])
+          return {
+            "wallet": wallet,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "createGridOrderPoolCompact[3]": { name: "createGridOrderPoolCompact[3]", constructTransaction: async () => {
+          let data = nucleus.interface.encodeFunctionData("createGridOrderPoolCompact", [{
+            tokenSources: [{
+              token: poisonToken1.address,
+              amount: 1
+            },{
+              token: token1.address,
+              amount: 1
+            }],
+            exchangeRates: [
+              HydrogenNucleusHelper.encodeExchangeRate(1, 1),
+              HydrogenNucleusHelper.encodeExchangeRate(1, 1),
+            ],
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
         "createLimitOrderPool[0]": { name: "createLimitOrderPool[0]", constructTransaction: async () => {
           let data = nucleus.interface.encodeFunctionData("createLimitOrderPool", [{
             tokenA: token1.address,
@@ -1113,12 +1412,13 @@ describe("HydrogenNucleus-reentrancy", function () {
           }
         }},
         "createLimitOrderPool[1]": { name: "createLimitOrderPool[1]", constructTransaction: async () => {
+          let balI = await nucleus.getTokenBalance(poisonToken1.address, user1InternalLocation);
           let data = nucleus.interface.encodeFunctionData("createLimitOrderPool", [{
             tokenA: poisonToken1.address,
             tokenB: token1.address,
             locationA: user1ExternalLocation,
             locationB: user1ExternalLocation,
-            amountA: 1,
+            amountA: balI.add(1),
             exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1, 1),
             hptReceiver: user1.address
           }])
@@ -1147,6 +1447,71 @@ describe("HydrogenNucleus-reentrancy", function () {
             amountA: 0,
             exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1, 1),
             hptReceiver: addr
+          }])
+          return {
+            "wallet": wallet,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "createLimitOrderPool[3]": { name: "createLimitOrderPool[3]", constructTransaction: async () => {
+          let data = nucleus.interface.encodeFunctionData("createLimitOrderPool", [{
+            tokenA: poisonToken1.address,
+            tokenB: token1.address,
+            locationA: user1ExternalLocation,
+            locationB: user1ExternalLocation,
+            amountA: 1,
+            exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1, 1),
+            hptReceiver: user1.address
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "createLimitOrderPoolCompact[0]": { name: "createLimitOrderPoolCompact[0]", constructTransaction: async () => {
+          let data = nucleus.interface.encodeFunctionData("createLimitOrderPoolCompact", [{
+            tokenA: token1.address,
+            tokenB: poisonToken1.address,
+            amountA: 1,
+            exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1, 1),
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "createLimitOrderPoolCompact[1]": { name: "createLimitOrderPoolCompact[1]", constructTransaction: async () => {
+          let data = nucleus.interface.encodeFunctionData("createLimitOrderPoolCompact", [{
+            tokenA: poisonToken1.address,
+            tokenB: token1.address,
+            amountA: 1,
+            exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1, 1),
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "createLimitOrderPoolCompact[2]": { name: "createLimitOrderPoolCompact[2]", constructTransactionFor: async (addr: string|undefined) => {
+          if(!addr) addr = user1.address;
+          let wallet = undefined
+          if(addr == owner1.address) wallet = owner1;
+          else if(addr == owner2.address) wallet = owner2;
+          else if(addr == user1.address) wallet = user1;
+          else if(addr == user2.address) wallet = user2;
+          else if(addr == user3.address) wallet = user3;
+          else if(addr == poisonERC721Receiver.address) wallet = poisonERC721Receiver;
+          else if(addr == poisonFlashSwapCallee.address) wallet = poisonFlashSwapCallee;
+
+          let data = nucleus.interface.encodeFunctionData("createLimitOrderPoolCompact", [{
+            tokenA: token1.address,
+            tokenB: token2.address,
+            amountA: 0,
+            exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(1, 1),
           }])
           return {
             "wallet": wallet,
@@ -1193,8 +1558,6 @@ describe("HydrogenNucleus-reentrancy", function () {
             amountB: 1,
             locationA: user1ExternalLocation,
             locationB: user1ExternalLocation,
-            flashSwapCallee: AddressZero,
-            callbackData: "0x"
           }])
           return {
             "wallet": user1,
@@ -1211,8 +1574,6 @@ describe("HydrogenNucleus-reentrancy", function () {
             amountB: 1,
             locationA: user1ExternalLocation,
             locationB: user1ExternalLocation,
-            flashSwapCallee: AddressZero,
-            callbackData: "0x"
           }])
           return {
             "wallet": user1,
@@ -1239,8 +1600,6 @@ describe("HydrogenNucleus-reentrancy", function () {
             amountB: 0,
             locationA: HydrogenNucleusHelper.externalAddressToLocation(addr),
             locationB: HydrogenNucleusHelper.externalAddressToLocation(addr),
-            flashSwapCallee: AddressZero,
-            callbackData: "0x"
           }])
           return {
             "wallet": wallet,
@@ -1248,7 +1607,35 @@ describe("HydrogenNucleus-reentrancy", function () {
             data,
           }
         }},
-        "executeMarketOrder[3]": { name: "executeMarketOrder[3]", constructTransactionFor: async (addr: string|undefined) => {
+        "executeMarketOrderDstExt[0]": { name: "executeMarketOrderDstExt[0]", constructTransaction: async () => {
+          let data = nucleus.interface.encodeFunctionData("executeMarketOrderDstExt", [{
+            poolID: 5002,
+            tokenA: poisonToken1.address,
+            tokenB: token1.address,
+            amountA: 1,
+            amountB: 1,
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "executeMarketOrderDstExt[1]": { name: "executeMarketOrderDstExt[1]", constructTransaction: async () => {
+          let data = nucleus.interface.encodeFunctionData("executeMarketOrderDstExt", [{
+            poolID: 5002,
+            tokenA: token1.address,
+            tokenB: poisonToken1.address,
+            amountA: 1,
+            amountB: 1,
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "executeMarketOrderDstExt[2]": { name: "executeMarketOrderDstExt[2]", constructTransactionFor: async (addr: string|undefined) => {
           if(!addr) addr = user1.address;
           let wallet = undefined
           if(addr == owner1.address) wallet = owner1;
@@ -1259,7 +1646,147 @@ describe("HydrogenNucleus-reentrancy", function () {
           else if(addr == poisonERC721Receiver.address) wallet = poisonERC721Receiver;
           else if(addr == poisonFlashSwapCallee.address) wallet = poisonFlashSwapCallee;
 
-          let data = nucleus.interface.encodeFunctionData("executeMarketOrder", [{
+          let data = nucleus.interface.encodeFunctionData("executeMarketOrderDstExt", [{
+            poolID: 1001,
+            tokenA: token1.address,
+            tokenB: token2.address,
+            amountA: 0,
+            amountB: 0,
+          }])
+          return {
+            "wallet": wallet,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "executeMarketOrderDstInt[0]": { name: "executeMarketOrderDstInt[0]", constructTransaction: async () => {
+          let data = nucleus.interface.encodeFunctionData("executeMarketOrderDstInt", [{
+            poolID: 5002,
+            tokenA: poisonToken1.address,
+            tokenB: token1.address,
+            amountA: 1,
+            amountB: 1,
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "executeMarketOrderDstInt[1]": { name: "executeMarketOrderDstInt[1]", constructTransaction: async () => {
+          let data = nucleus.interface.encodeFunctionData("executeMarketOrderDstInt", [{
+            poolID: 5002,
+            tokenA: token1.address,
+            tokenB: poisonToken1.address,
+            amountA: 1,
+            amountB: 1,
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "executeMarketOrderDstInt[2]": { name: "executeMarketOrderDstInt[2]", constructTransactionFor: async (addr: string|undefined) => {
+          if(!addr) addr = user1.address;
+          let wallet = undefined
+          if(addr == owner1.address) wallet = owner1;
+          else if(addr == owner2.address) wallet = owner2;
+          else if(addr == user1.address) wallet = user1;
+          else if(addr == user2.address) wallet = user2;
+          else if(addr == user3.address) wallet = user3;
+          else if(addr == poisonERC721Receiver.address) wallet = poisonERC721Receiver;
+          else if(addr == poisonFlashSwapCallee.address) wallet = poisonFlashSwapCallee;
+
+          let data = nucleus.interface.encodeFunctionData("executeMarketOrderDstInt", [{
+            poolID: 1001,
+            tokenA: token1.address,
+            tokenB: token2.address,
+            amountA: 0,
+            amountB: 0,
+          }])
+          return {
+            "wallet": wallet,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "executeFlashSwap[0]": { name: "executeFlashSwap[0]", constructTransaction: async () => {
+          let data = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
+            poolID: 5002,
+            tokenA: poisonToken1.address,
+            tokenB: token1.address,
+            amountA: 1,
+            amountB: 1,
+            locationA: user1ExternalLocation,
+            locationB: user1ExternalLocation,
+            flashSwapCallee: AddressZero,
+            callbackData: "0x"
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "executeFlashSwap[1]": { name: "executeFlashSwap[1]", constructTransaction: async () => {
+          let data = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
+            poolID: 5002,
+            tokenA: token1.address,
+            tokenB: poisonToken1.address,
+            amountA: 1,
+            amountB: 1,
+            locationA: user1ExternalLocation,
+            locationB: user1ExternalLocation,
+            flashSwapCallee: AddressZero,
+            callbackData: "0x"
+          }])
+          return {
+            "wallet": user1,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "executeFlashSwap[2]": { name: "executeFlashSwap[2]", constructTransactionFor: async (addr: string|undefined) => {
+          if(!addr) addr = user1.address;
+          let wallet = undefined
+          if(addr == owner1.address) wallet = owner1;
+          else if(addr == owner2.address) wallet = owner2;
+          else if(addr == user1.address) wallet = user1;
+          else if(addr == user2.address) wallet = user2;
+          else if(addr == user3.address) wallet = user3;
+          else if(addr == poisonERC721Receiver.address) wallet = poisonERC721Receiver;
+          else if(addr == poisonFlashSwapCallee.address) wallet = poisonFlashSwapCallee;
+
+          let data = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
+            poolID: 1001,
+            tokenA: token1.address,
+            tokenB: token2.address,
+            amountA: 0,
+            amountB: 0,
+            locationA: HydrogenNucleusHelper.externalAddressToLocation(addr),
+            locationB: HydrogenNucleusHelper.externalAddressToLocation(addr),
+            flashSwapCallee: AddressZero,
+            callbackData: "0x"
+          }])
+          return {
+            "wallet": wallet,
+            to: nucleus.address,
+            data,
+          }
+        }},
+        "executeFlashSwap[3]": { name: "executeFlashSwap[3]", constructTransactionFor: async (addr: string|undefined) => {
+          if(!addr) addr = user1.address;
+          let wallet = undefined
+          if(addr == owner1.address) wallet = owner1;
+          else if(addr == owner2.address) wallet = owner2;
+          else if(addr == user1.address) wallet = user1;
+          else if(addr == user2.address) wallet = user2;
+          else if(addr == user3.address) wallet = user3;
+          else if(addr == poisonERC721Receiver.address) wallet = poisonERC721Receiver;
+          else if(addr == poisonFlashSwapCallee.address) wallet = poisonFlashSwapCallee;
+
+          let data = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
             poolID: 1001,
             tokenA: token1.address,
             tokenB: token2.address,
@@ -1276,7 +1803,7 @@ describe("HydrogenNucleus-reentrancy", function () {
             data,
           }
         }},
-        "executeMarketOrder[4]": { name: "executeMarketOrder[4]", constructTransactionFor: async (addr: string|undefined) => {
+        "executeFlashSwap[4]": { name: "executeFlashSwap[4]", constructTransactionFor: async (addr: string|undefined) => {
           if(!addr) addr = user1.address;
           let wallet = undefined
           if(addr == owner1.address) wallet = owner1;
@@ -1287,7 +1814,7 @@ describe("HydrogenNucleus-reentrancy", function () {
           else if(addr == poisonERC721Receiver.address) wallet = poisonERC721Receiver;
           else if(addr == poisonFlashSwapCallee.address) wallet = poisonFlashSwapCallee;
 
-          let data = nucleus.interface.encodeFunctionData("executeMarketOrder", [{
+          let data = nucleus.interface.encodeFunctionData("executeFlashSwap", [{
             poolID: 1001,
             tokenA: token1.address,
             tokenB: token2.address,
@@ -1557,25 +2084,25 @@ describe("HydrogenNucleus-reentrancy", function () {
           }
         }},
         "setWrappedGasToken": { name: "setWrappedGasToken", calldata: nucleus.interface.encodeFunctionData("setWrappedGasToken", [wgas.address]) },
-        "tokenTransfer[0]": { name: "tokenTransfer", wallet: user1, calldata: nucleus.interface.encodeFunctionData("tokenTransfer", [{
+        "tokenTransfer[0]": { name: "tokenTransfer[0]", wallet: user1, calldata: nucleus.interface.encodeFunctionData("tokenTransfer", [{
           token: poisonToken1.address,
           src: user1ExternalLocation,
           dst: user1InternalLocation,
           amount: 1
         }]) },
-        "tokenTransfer[1]": { name: "tokenTransfer", wallet: user1, calldata: nucleus.interface.encodeFunctionData("tokenTransfer", [{
+        "tokenTransfer[1]": { name: "tokenTransfer[1]", wallet: user1, calldata: nucleus.interface.encodeFunctionData("tokenTransfer", [{
           token: poisonToken1.address,
           src: user1InternalLocation,
           dst: user1ExternalLocation,
           amount: 1
         }]) },
-        "tokenTransfer[2]": { name: "tokenTransfer", wallet: user1, calldata: nucleus.interface.encodeFunctionData("tokenTransfer", [{
+        "tokenTransfer[2]": { name: "tokenTransfer[2]", wallet: user3, calldata: nucleus.interface.encodeFunctionData("tokenTransfer", [{
           token: poisonToken1.address,
-          src: user1InternalLocation,
+          src: user3InternalLocation,
           dst: user2InternalLocation,
           amount: 1
         }]) },
-        "tokenTransfer[3]": { name: "tokenTransfer", wallet: user1, constructTransactionFor: async (addr: string|undefined) => {
+        "tokenTransfer[3]": { name: "tokenTransfer[3]", wallet: user1, constructTransactionFor: async (addr: string|undefined) => {
           if(!addr) addr = user1.address;
           let wallet = undefined
           if(addr == owner1.address) wallet = owner1;
@@ -1598,6 +2125,28 @@ describe("HydrogenNucleus-reentrancy", function () {
             data,
           }
         }},
+        "tokenTransfer[4]": { name: "tokenTransfer[4]", wallet: user1, calldata: nucleus.interface.encodeFunctionData("tokenTransfer", [{
+          token: token1.address,
+          src: user1ExternalLocation,
+          dst: user1InternalLocation,
+          amount: 1
+        }]) },
+        "tokenTransferIn[0]": { name: "tokenTransferIn[0]", wallet: user1, calldata: nucleus.interface.encodeFunctionData("tokenTransferIn", [{
+          token: token1.address,
+          amount: 1
+        }]) },
+        "tokenTransferIn[1]": { name: "tokenTransferIn[1]", wallet: user1, calldata: nucleus.interface.encodeFunctionData("tokenTransferIn", [{
+          token: poisonToken1.address,
+          amount: 1
+        }]) },
+        "tokenTransferOut[0]": { name: "tokenTransferOut[0]", wallet: user1, calldata: nucleus.interface.encodeFunctionData("tokenTransferOut", [{
+          token: token1.address,
+          amount: 1
+        }]) },
+        "tokenTransferOut[1]": { name: "tokenTransferOut[1]", wallet: user1, calldata: nucleus.interface.encodeFunctionData("tokenTransferOut", [{
+          token: poisonToken1.address,
+          amount: 1
+        }]) },
         "transferFrom[0]": { name: "transferFrom[0]", constructTransaction: async () => {
           let owner = await nucleus.ownerOf(3001);
           let wallet = undefined;
@@ -1759,6 +2308,7 @@ describe("HydrogenNucleus-reentrancy", function () {
       await token2.mint(user1.address, WeiPerEther.mul(10_000));
       await token3.mint(user1.address, WeiPerEther.mul(10_000));
       await poisonToken1.mint(user1.address, WeiPerEther.mul(10_000));
+      await poisonToken1.mint(user3.address, WeiPerEther.mul(10_000));
       await poisonTokenA.mint(user1.address, WeiPerEther.mul(10_000));
       await poisonTokenB.mint(user1.address, WeiPerEther.mul(10_000));
       await poisonTokenC.mint(user1.address, WeiPerEther.mul(10_000));
@@ -1766,6 +2316,7 @@ describe("HydrogenNucleus-reentrancy", function () {
       await token2.connect(user1).approve(nucleus.address, MaxUint256);
       await token3.connect(user1).approve(nucleus.address, MaxUint256);
       await poisonToken1.connect(user1).approve(nucleus.address, MaxUint256);
+      await poisonToken1.connect(user3).approve(nucleus.address, MaxUint256);
       await poisonTokenA.connect(user1).approve(nucleus.address, MaxUint256);
       await poisonTokenB.connect(user1).approve(nucleus.address, MaxUint256);
       await poisonTokenC.connect(user1).approve(nucleus.address, MaxUint256);
@@ -1777,6 +2328,12 @@ describe("HydrogenNucleus-reentrancy", function () {
         amount: WeiPerEther,
         src: user1ExternalLocation,
         dst: user1InternalLocation,
+      });
+      await nucleus.connect(user3).tokenTransfer({
+        token: poisonToken1.address,
+        amount: WeiPerEther,
+        src: user3ExternalLocation,
+        dst: user3InternalLocation,
       });
       await nucleus.connect(user1).tokenTransfer({
         token: poisonTokenA.address,
@@ -1912,9 +2469,11 @@ describe("HydrogenNucleus-reentrancy", function () {
     for(const func of functionsList.filter(func => !func.canOnlyBeCalledOnce)) {
       it(`should be able to call ${func.name}()`, async function () {
         let { wallet, to, data } = await makeCall(func.name)
-        //let { wallet, to, data } = await makeCall(func)
-        await expect(wallet.sendTransaction({to, data})).to.not.be.reverted;
+        let call = wallet.sendTransaction({to, data});
+        await expect(call).to.not.be.reverted;
+        let tx = await call;
         expect(await nucleus.reentrancyGuardState()).eq(1); // return to enterable
+        l1DataFeeAnalyzer.register(func.name, tx);
       })
     }
   });
@@ -1945,8 +2504,11 @@ describe("HydrogenNucleus-reentrancy", function () {
             await poisonTokenB.setHookCall(innerCall.to, innerCall.data);
             await poisonTokenC.setHookCall(innerCall.to, innerCall.data);
             let { wallet, to, data } = await makeCall(triggerFunc.name)
-            await expect(wallet.sendTransaction({to, data})).to.not.be.reverted;
+            let call = wallet.sendTransaction({to, data});
+            await expect(call).to.not.be.reverted;
+            let tx = await call;
             expect(await nucleus.reentrancyGuardState()).eq(1); // return to enterable
+            l1DataFeeAnalyzer.register(triggerFunc.name, tx);
           })
         }
       })
@@ -1979,8 +2541,11 @@ describe("HydrogenNucleus-reentrancy", function () {
             let innerCall = await makeCall(reenterFunc.name)
             await poisonGasTokenReceiver.setHookCall(innerCall.to, innerCall.data);
             let { wallet, to, data } = await makeCall(triggerFunc.name)
-            await expect(wallet.sendTransaction({to, data})).to.not.be.reverted;
+            let call = wallet.sendTransaction({to, data});
+            await expect(call).to.not.be.reverted;
+            let tx = await call;
             expect(await nucleus.reentrancyGuardState()).eq(1); // return to enterable
+            l1DataFeeAnalyzer.register(triggerFunc.name, tx);
           })
         }
       });
@@ -2006,7 +2571,7 @@ describe("HydrogenNucleus-reentrancy", function () {
               let innerCall = await makeCall(reenterFunc.name, flashCallRecipient);
               await poisonERC721Receiver.setHookCall(innerCall.to, innerCall.data);
             }
-            if(triggerFunc.name.includes("executeMarketOrder")) {
+            if(triggerFunc.name.includes("executeFlashSwap")) {
               let flashCallRecipient = poisonFlashSwapCallee.address;
               let innerCall = await makeCall(reenterFunc.name, flashCallRecipient);
               await poisonFlashSwapCallee.setHookCall(innerCall.to, innerCall.data);
@@ -2018,12 +2583,21 @@ describe("HydrogenNucleus-reentrancy", function () {
             }
             // make outer call
             let { wallet, to, data } = await makeCall(triggerFunc.name)
-            await expect(wallet.sendTransaction({to, data})).to.not.be.reverted;
+            let call = wallet.sendTransaction({to, data});
+            await expect(call).to.not.be.reverted;
+            let tx = await call;
             expect(await nucleus.reentrancyGuardState()).eq(1); // return to enterable
+            l1DataFeeAnalyzer.register(triggerFunc.name, tx);
           })
         }
       });
     }
+
+    describe("L1 gas fees", function () {
+      it("calculate", async function () {
+        l1DataFeeAnalyzer.analyze()
+      });
+    });
 
   });
 

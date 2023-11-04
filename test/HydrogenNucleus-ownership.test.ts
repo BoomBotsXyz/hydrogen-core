@@ -130,7 +130,7 @@ describe("HydrogenNucleus-ownership", function () {
       // 1. encode the token1 -> pool 2001 -> token2 market order
       const call12 = {
         target: nucleus.address,
-        callData: nucleus.interface.encodeFunctionData('executeMarketOrder', [{
+        callData: nucleus.interface.encodeFunctionData('executeFlashSwap', [{
           poolID: 2001,
           tokenA: token2.address,
           tokenB: token1.address,
@@ -146,7 +146,7 @@ describe("HydrogenNucleus-ownership", function () {
       const functionCall12 = swapCallback.interface.encodeFunctionData('aggregate', [calls12])
       const callbackData12 = `0x${functionCall12.substring(10)}`
       // 2. encode the tokenX -> pool0 -> tokenY market order
-      let tx = await nucleus.connect(user3).executeMarketOrder({
+      let tx = await nucleus.connect(user3).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,

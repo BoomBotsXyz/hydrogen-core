@@ -17,6 +17,7 @@ import HydrogenNucleusEventLogger from "../scripts/utils/HydrogenNucleusEventLog
 import { setStorageAt, toBytes32 } from "../scripts/utilities/setStorage";
 import { decimalsToAmount } from "../scripts/utils/price";
 import { deployContract } from "../scripts/utils/deployContract";
+import L1DataFeeAnalyzer from "../scripts/utils/L1DataFeeAnalyzer";
 
 const { AddressZero, WeiPerEther, MaxUint256, Zero } = ethers.constants;
 const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
@@ -70,6 +71,8 @@ describe("HydrogenNucleus-flashSwaps", function () {
   let chainID: number;
   let networkSettings: any;
   let snapshot: BN;
+
+  let l1DataFeeAnalyzer = new L1DataFeeAnalyzer();
 
   before(async function () {
     [deployer, owner1, owner2, user1, user2, user3, user4, user5] = await ethers.getSigners();
@@ -168,7 +171,7 @@ describe("HydrogenNucleus-flashSwaps", function () {
       // 1. encode the token1 -> pool 2001 -> token2 market order
       const call12 = {
         target: nucleus.address,
-        callData: nucleus.interface.encodeFunctionData('executeMarketOrder', [{
+        callData: nucleus.interface.encodeFunctionData('executeFlashSwap', [{
           poolID: 2001,
           tokenA: token2.address,
           tokenB: token1.address,
@@ -184,7 +187,7 @@ describe("HydrogenNucleus-flashSwaps", function () {
       const functionCall12 = swapCallback.interface.encodeFunctionData('aggregate', [calls12])
       const callbackData12 = `0x${functionCall12.substring(10)}`
       // 2. encode the tokenX -> pool0 -> tokenY market order
-      let tx = await nucleus.connect(user3).executeMarketOrder({
+      let tx = await nucleus.connect(user3).executeFlashSwap({
         poolID: 1001,
         tokenA: token1.address,
         tokenB: token2.address,
@@ -204,6 +207,16 @@ describe("HydrogenNucleus-flashSwaps", function () {
       expect(await nucleus.getTokenBalance(token2.address, user1InternalLocation)).eq(amountB1001);
       expect(await nucleus.getTokenBalance(token1.address, user2InternalLocation)).eq(amountB2001);
       expect(await nucleus.getTokenBalance(token2.address, user3InternalLocation)).eq(expectedProfit1);
+      l1DataFeeAnalyzer.register("executeFlashSwap", tx);
+      // 0.0597104640 no callback
+      // 0.0644382720 yes callback. no data
+      // 0.1524280320 yes callback. circular arbitrage
+    });
+  });
+
+  describe("L1 gas fees", function () {
+    it("calculate", async function () {
+      l1DataFeeAnalyzer.analyze()
     });
   });
 });
