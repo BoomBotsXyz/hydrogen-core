@@ -267,10 +267,23 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Updates a LimitOrderPool.
-     * @param params poolID, exchangeRate, locationB
+     * @param params poolID, exchangeRate, locationB.
      */
     function updateLimitOrderPool(
         UpdateLimitOrderParams calldata params
+    ) external payable;
+
+    struct UpdateLimitOrderCompactParams {
+        uint256 poolID;       // the ID of the pool to update
+        bytes32 exchangeRate; // the new exchange rate of the limit order
+    }
+
+    /**
+     * @notice Updates a LimitOrderPool.
+     * @param params poolID, exchangeRate.
+     */
+    function updateLimitOrderPoolCompact(
+        UpdateLimitOrderCompactParams calldata params
     ) external payable;
 
     /***************************************

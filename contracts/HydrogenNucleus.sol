@@ -498,6 +498,26 @@ contract HydrogenNucleus is IHydrogenNucleus {
         emit TradeRequestUpdated(poolID, poolData.tokenA, poolData.tokenB, params.exchangeRate, locationB);
     }
 
+    /**
+     * @notice Updates a LimitOrderPool.
+     * @param params poolID, exchangeRate.
+     */
+    function updateLimitOrderPoolCompact(
+        UpdateLimitOrderCompactParams calldata params
+    ) external payable override {
+        _reentrancyGuardCheck();
+        // checks
+        uint256 poolID = params.poolID;
+        if(!_exists(poolID)) revert Errors.HydrogenPoolDoesNotExist();
+        if(_ownerOf(poolID) != msg.sender) revert Errors.HydrogenNotPoolOwner();
+        if(!Pools.isLimitOrderPool(poolID)) revert Errors.HydrogenNotALimitOrderPool();
+        // store data
+        LimitOrderPoolData storage poolData = _limitOrderPoolData[poolID];
+        bytes32 locationB = poolData.locationB;
+        poolData.exchangeRate = params.exchangeRate;
+        emit TradeRequestUpdated(poolID, poolData.tokenA, poolData.tokenB, params.exchangeRate, locationB);
+    }
+
     /***************************************
     GRID ORDER FUNCTIONS
     ***************************************/
