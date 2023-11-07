@@ -6,7 +6,7 @@ import { Locations } from "./../../libraries/Locations.sol";
 
 /**
  * @title MockLocations
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock contract used to test Locations.
  */
 contract MockLocations {

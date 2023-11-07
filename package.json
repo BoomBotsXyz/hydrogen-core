@@ -1,11 +1,11 @@
 {
   "name": "hydrogen-core",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Smart contracts for the core of the Hydrogen protocol.",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "Hysland Finance",
+  "author": "Blue Matter Technologies Ltd.",
   "license": "none",
   "devDependencies": {
     "@ethersproject/abi": "^5.7.0",
@@ -35,6 +35,7 @@
     "@openzeppelin/contracts": "^4.9.2",
     "axios": "^0.26.1",
     "dotenv": "^16.0.3",
+    "ethers-multicall-hysland-finance": "^0.2.4",
     "hardhat-abi-exporter": "^2.10.1",
     "hardhat-contract-sizer": "^2.8.0"
   }

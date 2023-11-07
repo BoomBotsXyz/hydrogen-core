@@ -6,7 +6,7 @@ import { Errors } from "./Errors.sol";
 
 /**
  * @title ExchangeRateMath
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A math library used for calculating the amount of tokens exchanged in trades.
  *
  * Trades involve two tokens, `tokenA` and `tokenB`. The following statements regarding the direction of token flows are true:

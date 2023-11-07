@@ -7,7 +7,7 @@ import { IERC721Receiver } from "./../../interfaces/IERC721Receiver.sol";
 
 /**
  * @title MockERC721Receiver2
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock erc721 receiver. Used to test `safeTransferFrom()``.
  *
  * This callee explictly reverts callbacks.

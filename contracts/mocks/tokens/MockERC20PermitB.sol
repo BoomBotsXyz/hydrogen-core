@@ -10,7 +10,7 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /**
  * @title MockERC20PermitB
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock ERC20 token used to test other contracts.
  *
  * This implementation also has an old version of the `ERC2612` permit extension.

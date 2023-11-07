@@ -9,7 +9,7 @@ import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 
 /**
  * @title MockERC20PermitAWithPermitHook
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock ERC20 token used to test other contracts.
  *
  * This implementation also has the `ERC2612` permit extension.

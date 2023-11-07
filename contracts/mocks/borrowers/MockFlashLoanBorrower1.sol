@@ -4,7 +4,7 @@ pragma solidity 0.8.19;
 
 /**
  * @title MockFlashLoanBorrower1
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock borrower. Used to test flash loans.
  *
  * This borrower doesn't implement the interface and thus reverts.

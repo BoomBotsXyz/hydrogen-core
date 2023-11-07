@@ -6,7 +6,7 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
  * @title MockERC20
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock ERC20 token used to test other contracts.
  *
  * This implementation should NOT be used in production (unguarded mint).

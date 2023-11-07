@@ -19,7 +19,7 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0x1Caba1EaA6F14b94EF732624Db1702eA41b718ff";
+let NUCLEUS_ADDRESS = "0x49FD8f704a54FB6226e2F14B4761bf6Be84ADF15";
 
 async function main() {
   chainID = (await provider.getNetwork()).chainId;

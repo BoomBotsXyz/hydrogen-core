@@ -6,6 +6,7 @@ import { config as dotenv_config } from "dotenv";
 dotenv_config();
 
 const accounts = JSON.parse(process.env.ACCOUNTS || "{}");
+const trader1 = new ethers.Wallet(accounts.trader1.key, provider);
 const trader2 = new ethers.Wallet(accounts.trader2.key, provider);
 
 import { HydrogenNucleus, MockERC20 } from "./../../typechain-types";
@@ -14,26 +15,23 @@ import { logContractAddress } from "./../utilities/logContractAddress";
 import { getNetworkSettings } from "./../utils/getNetworkSettings";
 import { deployContract, verifyContract } from "./../utils/deployContract";
 import HydrogenNucleusHelper from "../utils/HydrogenNucleusHelper";
+import { getTokensBySymbol } from "../utils/getTokens";
 
 const { AddressZero, WeiPerEther, MaxUint256 } = ethers.constants;
 const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
 const WeiPerWbtc = BN.from(100_000_000); // 8 decimals
 const MAX_PPM = BN.from(1_000_000); // parts per million
 
+let trader2ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader2.address);
+let trader2InternalLocation = HydrogenNucleusHelper.internalAddressToLocation(trader2.address);
+
 let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0xfE4d3341B87e106fD718f71B71c5430082f01836";
+let NUCLEUS_ADDRESS = "0x49FD8f704a54FB6226e2F14B4761bf6Be84ADF15";
 
-let tokenMetadatas:any = {
-  "DAI": {"name":"Dai Stablecoin", "symbol":"DAI", "decimals":18, "artifact":"MockERC20PermitC", "address":"0x7D691e6b03b46B5A5769299fC9a32EaC690B7abc", "mintAmount":WeiPerEther.mul(1000)},
-  "USDC": {"name":"USDCoin", "symbol":"USDC", "decimals":6, "artifact":"MockERC20PermitA", "address":"0x35CD54a3547190056A0F690357b1B2692B90Fb00", "mintAmount":WeiPerUsdc.mul(1000)},
-  "USDT": {"name":"Tether USD", "symbol":"USDT", "decimals":6, "artifact":"MockERC20", "address":"0x70BF48BcfFcFcca6123fFeD4d4EC4Ec6eb31BA00", "mintAmount":WeiPerUsdc.mul(1000)},
-  "DOGE": {"name":"Dogecoin", "symbol":"DOGE", "decimals":8, "artifact":"MockERC20", "address":"0xFF0f9D4956f5f7f1Ea076d015f0a3c7185c5fc4f", "mintAmount":WeiPerWbtc.mul(10000)},
-  "WBTC": {"name":"Wrapped Bitcoin", "symbol":"WBTC", "decimals":8, "artifact":"MockERC20", "address":"0x2E6365CfB7de7F00478C02485Ca56a975369d2B8", "mintAmount":WeiPerWbtc.mul(1).div(10)},
-  "WETH": {"name":"Wrapped Ether", "symbol":"WETH", "decimals":18, "artifact":"MockERC20", "address":"0xEa0B5E9AFa37C1cA61779deAB8527eAE62b30367", "mintAmount":WeiPerEther.mul(1)},
-};
+let tokenMetadatas = getTokensBySymbol(80001);
 
 async function main() {
   console.log(`Using ${trader2.address} as trader2`);
@@ -43,12 +41,13 @@ async function main() {
   function isChain(chainid: number, chainName: string) {
     return ((chainID === chainid) || ((chainID === 31337) && (process.env.FORK_NETWORK === chainName)));
   }
-  if(!isChain(84531, "basegoerli")) throw("Only run this on Base Goerli or a local fork of Base Goerli");
+  if(!isChain(80001, "mumbai")) throw("Only run this on Polygon Mumbai or a local fork of Mumbai");
 
   await verifyDeployments()
   nucleus = await ethers.getContractAt("HydrogenNucleus", NUCLEUS_ADDRESS, trader2) as HydrogenNucleus;
 
   await executeMarketOrder1();
+  //await executeMarketOrder2();
 }
 
 async function verifyDeployments() {
@@ -84,7 +83,51 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
 
 async function executeMarketOrder(params:any) {
   console.log("Executing market order");
-  let tx = await nucleus.connect(trader2).executeMarketOrder(params);
+  let gasValue = params.gasValue || 0
+  let tx: any
+  if(gasValue > 0) {
+    let txdata0 = nucleus.interface.encodeFunctionData("wrapGasToken", [trader2InternalLocation])
+    let params2 = {...params, locationB: trader2InternalLocation}
+    let txdata1 = nucleus.interface.encodeFunctionData("executeMarketOrder", [params2])
+    let txdatas = [txdata0, txdata1]
+    tx = await nucleus.connect(trader2).multicall(txdatas, {...networkSettings.overrides, gasLimit:1000000, value: gasValue});
+  } else {
+    tx = await nucleus.connect(trader2).executeMarketOrder(params, {...networkSettings.overrides, gasLimit:1000000});
+  }
+  console.log("tx:", tx);
+  await tx.wait(networkSettings.confirmations);
+  console.log("Executed market order");
+}
+
+async function executeMarketOrderDstExt(params:any) {
+  console.log("Executing market order");
+  let tx = await nucleus.connect(trader2).executeMarketOrderDstExt(params, {...networkSettings.overrides, gasLimit:1000000, value: params.gasValue || 0});
+  console.log("tx:", tx);
+  await tx.wait(networkSettings.confirmations);
+  console.log("Executed market order");
+}
+
+async function executeMarketOrderDstInt(params:any) {
+  console.log("Executing market order");
+  let tx = await nucleus.connect(trader2).executeMarketOrderDstInt(params, {...networkSettings.overrides, gasLimit:1000000, value: params.gasValue || 0});
+  console.log("tx:", tx);
+  await tx.wait(networkSettings.confirmations);
+  console.log("Executed market order");
+}
+
+async function executeFlashSwap(params:any) {
+  console.log("Executing market order");
+  let gasValue = params.gasValue || 0
+  let tx: any
+  if(gasValue > 0) {
+    let txdata0 = nucleus.interface.encodeFunctionData("wrapGasToken", [trader2InternalLocation])
+    let params2 = {...params, locationB: trader2InternalLocation}
+    let txdata1 = nucleus.interface.encodeFunctionData("executeFlashSwap", [params2])
+    let txdatas = [txdata0, txdata1]
+    tx = await nucleus.connect(trader2).multicall(txdatas, {...networkSettings.overrides, gasLimit:1000000, value: gasValue});
+  } else {
+    tx = await nucleus.connect(trader2).executeFlashSwap(params, {...networkSettings.overrides, gasLimit:1000000});
+  }
   console.log("tx:", tx);
   await tx.wait(networkSettings.confirmations);
   console.log("Executed market order");
@@ -101,9 +144,8 @@ async function executeMarketOrder1() {
   let amountBMT = WeiPerWbtc.mul(1).div(10);
   let { amountAMT } = HydrogenNucleusHelper.calculateMarketOrderExactBMT(amountBMT, pool.exchangeRate, fees.feePPM);
   let poolBalance = await nucleus.getTokenBalance(usdc.address, poolLocation);
-  if(poolBalance.lt(amountAMT)) throw new Error("insufficient capacity for trade");
-  await checkTokenBalancesAndAllowance(wbtc, trader2, amountBMT);
-  let trader2ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader2.address);
+  if(poolBalance.lt(amountAMT.mul(4))) throw new Error("insufficient capacity for trade");
+  await checkTokenBalancesAndAllowance(wbtc, trader2, amountBMT.mul(4));
   // execute market order
   let params = {
     poolID: poolID,
@@ -116,7 +158,43 @@ async function executeMarketOrder1() {
     flashSwapCallee: AddressZero,
     callbackData: "0x"
   };
+  // test all variations
   await executeMarketOrder(params);
+  await executeMarketOrderDstExt(params);
+  await executeMarketOrderDstInt(params);
+  await executeFlashSwap(params);
+}
+
+async function executeMarketOrder2() {
+  // sell eth to buy dai
+  let dai = await ethers.getContractAt("MockERC20", tokenMetadatas["DAI"].address, trader2) as MockERC20;
+  let weth = await ethers.getContractAt("MockERC20", tokenMetadatas["WETH"].address, trader2) as MockERC20;
+  let poolID = 10001;
+  let poolLocation = HydrogenNucleusHelper.poolIDtoLocation(poolID);
+  let pool = await nucleus.getLimitOrderPool(poolID);
+  let fees = await nucleus.getSwapFeeForPair(dai.address, weth.address);
+  let amountBMT = WeiPerEther.div(1000);
+  let { amountAMT } = HydrogenNucleusHelper.calculateMarketOrderExactBMT(amountBMT, pool.exchangeRate, fees.feePPM);
+  let poolBalance = await nucleus.getTokenBalance(dai.address, poolLocation);
+  if(poolBalance.lt(amountAMT)) throw new Error("insufficient capacity for trade");
+  // execute market order
+  let params = {
+    poolID: poolID,
+    tokenA: dai.address,
+    tokenB: weth.address,
+    amountA: amountAMT,
+    amountB: amountBMT,
+    locationA: trader2ExternalLocation,
+    locationB: trader2ExternalLocation,
+    flashSwapCallee: AddressZero,
+    callbackData: "0x",
+    gasValue: amountBMT,
+  };
+  // test all variations
+  await executeMarketOrder(params);
+  await executeMarketOrderDstExt(params);
+  await executeMarketOrderDstInt(params);
+  await executeFlashSwap(params);
 }
 
 main()

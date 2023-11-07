@@ -4,7 +4,7 @@ pragma solidity 0.8.19;
 
 /**
  * @title Errors
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A library of custom error types used in Hydrogen.
  */
 library Errors {
@@ -103,6 +103,10 @@ library Errors {
     // thrown when a call reenters illegally
     error HydrogenReentrancyGuard();
 
+    // other errors
+
+    // thrown when the number of elements in an array is not what was expected
+    error HydrogenLengthMismatch();
     // unknown error
     error HydrogenUnknownError();
 }

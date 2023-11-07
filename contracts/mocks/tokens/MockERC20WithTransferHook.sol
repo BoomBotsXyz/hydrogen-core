@@ -7,7 +7,7 @@ import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 
 /**
  * @title MockERC20WithTransferHook
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock ERC20 token used to test other contracts.
  *
  * This implementation should NOT be used in production (unguarded mint, unguarded transfer hook).

@@ -5,7 +5,7 @@ pragma solidity 0.8.19;
 
 /**
  * @title MockFaultyGasTokenReceiver2
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock contract used to test other contracts.
  *
  * When this contract receives the gas token it reverts.

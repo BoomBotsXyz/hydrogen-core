@@ -6,7 +6,7 @@ import { IERC3156FlashBorrower } from "./../../interfaces/IERC3156FlashBorrower.
 
 /**
  * @title MockFlashLoanBorrower2
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock borrower. Used to test flash loans.
  *
  * This callee explicitly reverts callbacks.

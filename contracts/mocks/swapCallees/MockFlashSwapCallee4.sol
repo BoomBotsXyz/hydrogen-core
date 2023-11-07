@@ -9,7 +9,7 @@ import { MockERC20 } from "./../tokens/MockERC20.sol";
 
 /**
  * @title MockFlashSwapCallee4
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock callee. Used to test flash swaps.
  *
  * This callee simulates an arbitrage strategy, using a flash swap from Hydrogen to trade in other markets and return the proceeds.

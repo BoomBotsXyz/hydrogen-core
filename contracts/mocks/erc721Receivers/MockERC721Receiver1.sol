@@ -6,7 +6,7 @@ import { IHydrogenNucleus } from "./../../interfaces/IHydrogenNucleus.sol";
 
 /**
  * @title MockERC721Receiver1
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock erc721 receiver. Used to test `safeTransferFrom()``.
  *
  * This callee doesn't implement the receiver interface and thus reverts.

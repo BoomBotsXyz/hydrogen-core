@@ -24,7 +24,7 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0x1Caba1EaA6F14b94EF732624Db1702eA41b718ff";
+let NUCLEUS_ADDRESS = "0x49FD8f704a54FB6226e2F14B4761bf6Be84ADF15";
 
 let tokenMetadatas = getTokensBySymbol(8453);
 
@@ -58,13 +58,13 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
   // check balance
   let balance = await token.balanceOf(user.address);
   if(balance.lt(amount)) {
-    console.log(`insufficient balance. requested ${amount.toString()} have ${balance.toString()}`)
+    throw new Error(`insufficient balance. requested ${amount.toString()} have ${balance.toString()}`)
   }
   // check allowance
   let allowance = await token.allowance(user.address, nucleus.address);
   if(allowance.lt(amount)) {
     console.log("approving token");
-    let tx = await token.connect(user).approve(nucleus.address, MaxUint256, networkSettings.overrides);
+    let tx = await token.connect(user).approve(nucleus.address, MaxUint256, {...networkSettings.overrides, gasLimit: 80_000});
     console.log("tx:", tx);
     await tx.wait(networkSettings.confirmations);
     console.log("approved token");
@@ -74,6 +74,16 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
 async function createLimitOrder(params:any) {
   console.log("Creating limit order pool");
   let tx = await nucleus.connect(trader1).createLimitOrderPool(params, {...networkSettings.overrides, gasLimit: 300_000});
+  await watchTxForCreatedPoolID(tx);
+}
+
+async function createLimitOrderCompact(params:any) {
+  console.log("Creating limit order pool");
+  let tx = await nucleus.connect(trader1).createLimitOrderPoolCompact(params, {...networkSettings.overrides, gasLimit: 300_000, value: params.gasValue||0});
+  await watchTxForCreatedPoolID(tx);
+}
+
+async function watchTxForCreatedPoolID(tx:any) {
   console.log("tx:", tx);
   let receipt = await tx.wait(networkSettings.confirmations);
   if(!receipt || !receipt.events || receipt.events.length == 0) {
@@ -101,28 +111,10 @@ async function createLimitOrder1() {
     tokenA: tokenMetadatas["WETH"].address,
     tokenB: tokenMetadatas["USDbC"].address,
     exchangeRate: exchangeRate,
-    locationA: trader1InternalLocation,
-    locationB: trader1ExternalLocation,
     amountA: amountA,
-    hptReceiver: trader1.address
+    gasValue: amountA
   }
-  // use multicall to combine calls to wrapGasToken and createLimitOrderPool
-  //await createLimitOrder(params);
-  //let tx = await nucleus.connect(trader1).createLimitOrderPool(params, {...networkSettings.overrides, gasLimit: 300_000});
-  let txdata0 = nucleus.interface.encodeFunctionData("wrapGasToken", [trader1InternalLocation])
-  let txdata1 = nucleus.interface.encodeFunctionData("createLimitOrderPool", [params])
-  let txdatas = [txdata0, txdata1]
-  console.log("Creating limit order pool");
-  let tx = await nucleus.connect(trader1).multicall(txdatas, {...networkSettings.overrides, value: amountA, gasLimit: 400_000});
-  console.log("tx:", tx);
-  let receipt = await tx.wait(networkSettings.confirmations);
-  if(!receipt || !receipt.events || receipt.events.length == 0) {
-    console.log(receipt)
-    throw new Error("events not found");
-  }
-  let createEvent = (receipt.events as any).filter(event => event.event == 'PoolCreated')[0];
-  let poolID = createEvent.args.poolID;
-  console.log(`Created limit order pool ${poolID}`);
+  await createLimitOrderCompact(params);
 }
 
 main()

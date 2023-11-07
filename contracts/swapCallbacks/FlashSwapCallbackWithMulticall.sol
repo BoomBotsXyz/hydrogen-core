@@ -10,7 +10,7 @@ import { Locations } from "./../libraries/Locations.sol";
 
 /**
  * @title FlashSwapCallbackWithMulticall
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A flash swap callback. May be used in production but must be used with care.
  *
  * This callback can be used as part of an arbitrage strategy, using a flash swap from Hydrogen to trade in other markets and return the proceeds.

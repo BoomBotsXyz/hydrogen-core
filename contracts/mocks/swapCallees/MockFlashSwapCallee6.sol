@@ -9,7 +9,7 @@ import { MockERC20 } from "./../tokens/MockERC20.sol";
 
 /**
  * @title MockFlashSwapCallee6
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock callee. Used to test flash swaps.
  *
  * This callee simulates a malicious user trying to use a flash swap to sell an HPT.
@@ -27,13 +27,13 @@ contract MockFlashSwapCallee6 is IHydrogenFlashSwapCallee {
         nucleus = nuc;
     }
 
-    function executeMarketOrderWithCallback(IHydrogenNucleus.ExecuteMarketOrderParams calldata params) external {
+    function executeFlashSwapWithCallback(IHydrogenNucleus.ExecuteFlashSwapParams calldata params) external {
         // decode data as poolID
         uint256 poolID = abi.decode(params.callbackData, (uint256));
         // pull pool from msg.sender
         IHydrogenNucleus(nucleus).transferFrom(msg.sender, address(this), poolID);
         // swap
-        IHydrogenNucleus(nucleus).executeMarketOrder(params);
+        IHydrogenNucleus(nucleus).executeFlashSwap(params);
     }
 
     function hydrogenNucleusFlashSwapCallback(FlashSwapCallbackParams memory params) external override returns (bytes32 magicValue) {

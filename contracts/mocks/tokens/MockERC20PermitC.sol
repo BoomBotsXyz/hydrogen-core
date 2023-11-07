@@ -9,7 +9,7 @@ import { IERC20PermitC } from "./../../interfaces/tokens/IERC20PermitC.sol";
 
 /**
  * @title MockERC20PermitC
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock ERC20 token used to test other contracts.
  *
  * This implementation also has an old version of the `ERC2612` permit extension.

@@ -8,7 +8,7 @@ import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/draf
 
 /**
  * @title MockERC20PermitA
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock ERC20 token used to test other contracts.
  *
  * This implementation also has the `ERC2612` permit extension.

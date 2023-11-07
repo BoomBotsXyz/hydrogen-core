@@ -7,7 +7,7 @@ import { IHydrogenFlashSwapCallee } from "./../../interfaces/IHydrogenFlashSwapC
 
 /**
  * @title MockFlashSwapCallee2
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock callee. Used to test flash swaps.
  *
  * This callee explicitly reverts callbacks.

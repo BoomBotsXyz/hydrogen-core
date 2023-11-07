@@ -4,7 +4,7 @@ pragma solidity 0.8.19;
 
 /**
  * @title IHydrogenNucleus
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice The main Hydrogen contract.
  */
 interface IHydrogenNucleus {
@@ -98,6 +98,32 @@ interface IHydrogenNucleus {
      */
     function tokenTransfer(
         TokenTransferParams calldata params
+    ) external payable;
+
+    struct TokenTransferInParams {
+        address token;  // the address of the token to transfer
+        uint256 amount; // the amount of the token to transfer
+    }
+
+    /**
+     * @notice Transfers a token from `msg.sender`'s external address to their internal address.
+     * @param params token, amount.
+     */
+    function tokenTransferIn(
+        TokenTransferInParams calldata params
+    ) external payable;
+
+    struct TokenTransferOutParams {
+        address token;  // the address of the token to transfer
+        uint256 amount; // the amount of the token to transfer
+    }
+
+    /**
+     * @notice Transfers a token from `msg.sender`'s internal address to their external address.
+     * @param params token, amount.
+     */
+    function tokenTransferOut(
+        TokenTransferOutParams calldata params
     ) external payable;
 
     /***************************************
@@ -215,6 +241,24 @@ interface IHydrogenNucleus {
         uint256 poolID
     );
 
+    struct CreateLimitOrderCompactParams {
+        address tokenA;       // the token the market maker wants to sell
+        address tokenB;       // the token the market maker wants to buy
+        uint256 amountA;      // the amount of tokenA that the market maker wants to sell
+        bytes32 exchangeRate; // the amount of tokenB the market maker will receive for each unit of tokenA sold
+    }
+
+    /**
+     * @notice Creates a new LimitOrderPool.
+     * @param params tokenA, tokenB, amountA, exchangeRate.
+     * @return poolID The ID of the newly created pool.
+     */
+    function createLimitOrderPoolCompact(
+        CreateLimitOrderCompactParams calldata params
+    ) external payable returns (
+        uint256 poolID
+    );
+
     struct UpdateLimitOrderParams {
         uint256 poolID;       // the ID of the pool to update
         bytes32 exchangeRate; // the new exchange rate of the limit order
@@ -223,10 +267,23 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Updates a LimitOrderPool.
-     * @param params poolID, exchangeRate, locationB
+     * @param params poolID, exchangeRate, locationB.
      */
     function updateLimitOrderPool(
         UpdateLimitOrderParams calldata params
+    ) external payable;
+
+    struct UpdateLimitOrderCompactParams {
+        uint256 poolID;       // the ID of the pool to update
+        bytes32 exchangeRate; // the new exchange rate of the limit order
+    }
+
+    /**
+     * @notice Updates a LimitOrderPool.
+     * @param params poolID, exchangeRate.
+     */
+    function updateLimitOrderPoolCompact(
+        UpdateLimitOrderCompactParams calldata params
     ) external payable;
 
     /***************************************
@@ -278,6 +335,27 @@ interface IHydrogenNucleus {
         uint256 poolID
     );
 
+    struct TokenSourceCompact {
+        address token;
+        uint256 amount;
+    }
+
+    struct CreateGridOrderCompactParams {
+        TokenSourceCompact[] tokenSources;
+        bytes32[] exchangeRates;
+    }
+
+    /**
+     * @notice Creates a new GridOrderPool.
+     * @param params tokenSources, exchange rates.
+     * @return poolID The ID of the newly created pool.
+     */
+    function createGridOrderPoolCompact(
+        CreateGridOrderCompactParams calldata params
+    ) external payable returns (
+        uint256 poolID
+    );
+
     struct UpdateGridOrderPoolParams {
         uint256 poolID;
         TokenSource[] tokenSources;
@@ -286,10 +364,23 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Updates a GridOrderPool.
-     * @param params poolID, tokenSources, tradeRequests.
+     * @param params poolID, exchange rates.
      */
     function updateGridOrderPool(
         UpdateGridOrderPoolParams calldata params
+    ) external payable;
+
+    struct UpdateGridOrderPoolCompactParams {
+        uint256 poolID;
+        bytes32[] exchangeRates;
+    }
+
+    /**
+     * @notice Updates a GridOrderPool.
+     * @param params poolID, tokenSources, tradeRequests.
+     */
+    function updateGridOrderPoolCompact(
+        UpdateGridOrderPoolCompactParams calldata params
     ) external payable;
 
     /***************************************
@@ -304,15 +395,59 @@ interface IHydrogenNucleus {
         uint256 amountB;         // the amount of tokenB that the market taker will sell
         bytes32 locationA;       // the location to send tokenA to
         bytes32 locationB;       // the location to pull tokenB from
+    }
+
+    /**
+     * @notice Executes a market order.
+     * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB.
+     */
+    function executeMarketOrder(ExecuteMarketOrderParams calldata params) external payable;
+
+    struct ExecuteMarketOrderDstExtParams {
+        uint256 poolID;          // the ID of the pool to trade in
+        address tokenA;          // the token the market taker wants to buy
+        address tokenB;          // the token the market taker wants to sell
+        uint256 amountA;         // the amount of tokenA the market taker will receive
+        uint256 amountB;         // the amount of tokenB that the market taker will sell
+    }
+
+    /**
+     * @notice Executes a market order.
+     * @param params poolID, tokenA, tokenB, amountA, amountB.
+     */
+    function executeMarketOrderDstExt(ExecuteMarketOrderDstExtParams calldata params) external payable;
+
+    struct ExecuteMarketOrderDstIntParams {
+        uint256 poolID;          // the ID of the pool to trade in
+        address tokenA;          // the token the market taker wants to buy
+        address tokenB;          // the token the market taker wants to sell
+        uint256 amountA;         // the amount of tokenA the market taker will receive
+        uint256 amountB;         // the amount of tokenB that the market taker will sell
+    }
+
+    /**
+     * @notice Executes a market order.
+     * @param params poolID, tokenA, tokenB, amountA, amountB.
+     */
+    function executeMarketOrderDstInt(ExecuteMarketOrderDstIntParams calldata params) external payable;
+
+    struct ExecuteFlashSwapParams {
+        uint256 poolID;          // the ID of the pool to trade in
+        address tokenA;          // the token the market taker wants to buy
+        address tokenB;          // the token the market taker wants to sell
+        uint256 amountA;         // the amount of tokenA the market taker will receive
+        uint256 amountB;         // the amount of tokenB that the market taker will sell
+        bytes32 locationA;       // the location to send tokenA to
+        bytes32 locationB;       // the location to pull tokenB from
         address flashSwapCallee; // the receiver of the callback or address zero to not callback
         bytes callbackData;      // the data to send to the callback
     }
 
     /**
-     * @notice Executes a market order.
+     * @notice Executes a flash swap.
      * @param params poolID, tokenA, tokenB, amountA, amountB, locationA, locationB, flashSwapCallee, callbackData.
      */
-    function executeMarketOrder(ExecuteMarketOrderParams calldata params) external payable;
+    function executeFlashSwap(ExecuteFlashSwapParams calldata params) external payable;
 
     /***************************************
     ERC721 FUNCTIONS
@@ -575,6 +710,7 @@ interface IHydrogenNucleus {
     /**
      * @notice Sets the flash loan fee for multiple tokens.
      * @param params token, feePPM, receiverLocation.
+     * Can only be called by the contract owner.
      */
     function setFlashLoanFeesForTokens(SetFlashLoanFeeForTokenParam[] calldata params) external payable;
 
@@ -620,6 +756,7 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Sets the base URI for computing tokenURI.
+     * Can only be called by the contract owner.
      * @param uri The new base URI.
      */
     function setBaseURI(string calldata uri) external payable;
@@ -632,6 +769,7 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Sets the contract URI.
+     * Can only be called by the contract owner.
      * @param uri The new contract URI.
      */
     function setContractURI(string calldata uri) external payable;
@@ -661,7 +799,7 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Starts the ownership transfer of the contract to a new account. Replaces the pending transfer if there is one. The transfer will not be finalized until the new owner calls `acceptOwnership()`.
-     * Can only be called by the current owner.
+     * Can only be called by the current contract owner.
      * @param newOwner The new owner of the contract.
      */
     function transferOwnership(address newOwner) external payable;
@@ -674,7 +812,7 @@ interface IHydrogenNucleus {
 
     /**
      * @notice Leaves the contract without owner. It will not be possible to call `onlyOwner` functions anymore.
-     * Can only be called by the current owner.
+     * Can only be called by the current contract owner.
      */
     function renounceOwnership() external payable;
 }

@@ -8,7 +8,7 @@ import { MockERC20 } from "./../tokens/MockERC20.sol";
 
 /**
  * @title MockFlashLoanBorrower9
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock borrower. Used to test flash loans.
  *
  * This borrower simulates an arbitrage strategy, using a flash loan from Hydrogen to trade in other markets and return the proceeds. It also deposits and wraps the gas token to a location specified in `data`.

@@ -6,7 +6,7 @@ import { IHydrogenNucleus } from "./../../interfaces/IHydrogenNucleus.sol";
 
 /**
  * @title MockFlashSwapCallee1
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock callee. Used to test flash swaps.
  *
  * This callee doesn't implement the interface and thus reverts.

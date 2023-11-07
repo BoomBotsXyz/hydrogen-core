@@ -237,7 +237,7 @@ describe("HydrogenNucleus Integration", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(bob).executeMarketOrder(params);
+      let tx = await nucleus.connect(bob).executeFlashSwap(params);
       // checks
       let balPlA2 = await nucleus.getTokenBalance(usdc.address, poolLocation);
       let balPlB2 = await nucleus.getTokenBalance(wbtc.address, poolLocation);
@@ -292,7 +292,7 @@ describe("HydrogenNucleus Integration", function () {
         flashSwapCallee: AddressZero,
         callbackData: "0x"
       };
-      let tx = await nucleus.connect(bob).executeMarketOrder(params);
+      let tx = await nucleus.connect(bob).executeFlashSwap(params);
       // checks
       let balPlA2 = await nucleus.getTokenBalance(usdc.address, poolLocation);
       let balPlB2 = await nucleus.getTokenBalance(wbtc.address, poolLocation);

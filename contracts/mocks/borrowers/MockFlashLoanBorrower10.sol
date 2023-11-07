@@ -8,7 +8,7 @@ import { MockERC20 } from "./../tokens/MockERC20.sol";
 
 /**
  * @title MockFlashLoanBorrower10
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock borrower. Used to test flash loans.
  *
  * This borrower makes a reentrant call to nucleus and returns.

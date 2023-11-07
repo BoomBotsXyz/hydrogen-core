@@ -14,6 +14,7 @@ import { logContractAddress } from "./../utilities/logContractAddress";
 import { getNetworkSettings } from "./../utils/getNetworkSettings";
 import { deployContract, verifyContract } from "./../utils/deployContract";
 import HydrogenNucleusHelper from "../utils/HydrogenNucleusHelper";
+import { getTokensBySymbol } from "../utils/getTokens";
 
 const { AddressZero, WeiPerEther, MaxUint256 } = ethers.constants;
 const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
@@ -23,16 +24,9 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0xd2174BfC96C96608C2EC7Bd8b5919f9e3603d37f";
+let NUCLEUS_ADDRESS = "0x49FD8f704a54FB6226e2F14B4761bf6Be84ADF15";
 
-let tokenMetadatas:any = {
-  "DAI": {"name":"Dai Stablecoin", "symbol":"DAI", "decimals":18, "artifact":"MockERC20PermitC", "address":"0xF59FD8840DC9bb2d00Fe5c0BE0EdF637ACeC77E1", "mintAmount":WeiPerEther.mul(1000)},
-  "USDC": {"name":"USDCoin", "symbol":"USDC", "decimals":6, "artifact":"MockERC20PermitA", "address":"0xA9DC572c76Ead4197154d36bA3f4D0839353abbb", "mintAmount":WeiPerUsdc.mul(1000)},
-  "USDT": {"name":"Tether USD", "symbol":"USDT", "decimals":6, "artifact":"MockERC20", "address":"0x7a49D1804434Ad537e4cC0061865727b87E71cd8", "mintAmount":WeiPerUsdc.mul(1000)},
-  "DOGE": {"name":"Dogecoin", "symbol":"DOGE", "decimals":8, "artifact":"MockERC20", "address":"0xbb8fD2d558206E3CB68038A338718359a96e0C44", "mintAmount":WeiPerWbtc.mul(10000)},
-  "WBTC": {"name":"Wrapped Bitcoin", "symbol":"WBTC", "decimals":8, "artifact":"MockERC20", "address":"0x1C9b3500bF4B13BB338DC4F4d4dB1dEAF0638a1c", "mintAmount":WeiPerWbtc.mul(1).div(10)},
-  "WETH": {"name":"Wrapped Ether", "symbol":"WETH", "decimals":18, "artifact":"MockERC20", "address":"0x09db75630A9b2e66F220531B77080282371156FE", "mintAmount":WeiPerEther.mul(1)},
-};
+let tokenMetadatas = getTokensBySymbol(84531);
 
 async function main() {
   console.log(`Using ${trader1.address} as trader1`);
@@ -42,13 +36,15 @@ async function main() {
   function isChain(chainid: number, chainName: string) {
     return ((chainID === chainid) || ((chainID === 31337) && (process.env.FORK_NETWORK === chainName)));
   }
-  if(!isChain(80001, "mumbai")) throw("Only run this on Polygon Mumbai or a local fork of Mumbai");
+  if(!isChain(84531, "basegoerli")) throw("Only run this on Base Goerli or a local fork of Base Goerli");
 
   await verifyDeployments()
   nucleus = await ethers.getContractAt("HydrogenNucleus", NUCLEUS_ADDRESS, trader1) as HydrogenNucleus;
 
   await createLimitOrder1();
   await createLimitOrder2();
+  await createLimitOrder3();
+  await createLimitOrder4();
 }
 
 async function verifyDeployments() {
@@ -83,15 +79,26 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
 }
 
 async function createLimitOrder(params:any) {
-console.log("Creating limit order pool");
-  let tx = await nucleus.connect(trader1).createLimitOrderPool(params, {...networkSettings.overrides, gasLimit: 1000000});
+  console.log("Creating limit order pool");
+  let tx = await nucleus.connect(trader1).createLimitOrderPool(params, {...networkSettings.overrides, gasLimit: 300_000});
+  await watchTxForCreatedPoolID(tx);
+}
+
+async function createLimitOrderCompact(params:any) {
+  console.log("Creating limit order pool");
+  let tx = await nucleus.connect(trader1).createLimitOrderPoolCompact(params, {...networkSettings.overrides, gasLimit: 300_000, value: params.gasValue||0});
+  await watchTxForCreatedPoolID(tx);
+}
+
+async function watchTxForCreatedPoolID(tx:any) {
   console.log("tx:", tx);
   let receipt = await tx.wait(networkSettings.confirmations);
   if(!receipt || !receipt.events || receipt.events.length == 0) {
     console.log(receipt)
     throw new Error("events not found");
   }
-  let poolID = (receipt.events as any)[0].args.poolID;
+  let createEvent = (receipt.events as any).filter(event => event.event == 'PoolCreated')[0];
+  let poolID = createEvent.args.poolID;
   console.log(`Created limit order pool ${poolID}`);
 }
 
@@ -104,17 +111,13 @@ async function createLimitOrder1() {
   let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(amountA, amountB);
   await checkTokenBalancesAndAllowance(usdc, trader1, amountA);
   // create pool
-  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1.address);
   let params = {
     tokenA: tokenMetadatas["USDC"].address,
     tokenB: tokenMetadatas["WBTC"].address,
     exchangeRate: exchangeRate,
-    locationA: trader1ExternalLocation,
-    locationB: trader1ExternalLocation,
     amountA: amountA,
-    hptReceiver: trader1.address
   }
-  await createLimitOrder(params);
+  await createLimitOrderCompact(params);
 }
 
 async function createLimitOrder2() {
@@ -137,6 +140,39 @@ async function createLimitOrder2() {
     hptReceiver: trader1.address
   }
   await createLimitOrder(params);
+}
+
+async function createLimitOrder3() {
+  // use eth to create a limit order for dai
+  let amountA = WeiPerEther.div(1000);
+  let amountB = WeiPerEther.mul(1800).div(1000);
+  let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(amountA, amountB);
+  // create pool
+  let params = {
+    tokenA: tokenMetadatas["WETH"].address,
+    tokenB: tokenMetadatas["DAI"].address,
+    exchangeRate: exchangeRate,
+    amountA: amountA,
+    gasValue: amountA,
+  }
+  await createLimitOrderCompact(params);
+}
+
+async function createLimitOrder4() {
+  // buy weth using dai
+  let amountA = WeiPerEther.mul(1600);
+  let amountB = WeiPerEther;
+  let exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(amountA, amountB);
+  let dai = await ethers.getContractAt("MockERC20", tokenMetadatas["DAI"].address, trader1) as MockERC20;
+  await checkTokenBalancesAndAllowance(dai, trader1, amountA);
+  // create pool
+  let params = {
+    tokenA: tokenMetadatas["DAI"].address,
+    tokenB: tokenMetadatas["WETH"].address,
+    exchangeRate: exchangeRate,
+    amountA: amountA,
+  }
+  await createLimitOrderCompact(params);
 }
 
 main()

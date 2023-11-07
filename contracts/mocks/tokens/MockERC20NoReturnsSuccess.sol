@@ -4,7 +4,7 @@ pragma solidity 0.8.19;
 
 /**
  * @title MockERC20NoReturnsSuccess
- * @author Hysland Finance
+ * @author Blue Matter Technologies Ltd.
  * @notice A mock ERC20 token used to test other contracts.
  *
  * This implementation does not return success bools.
