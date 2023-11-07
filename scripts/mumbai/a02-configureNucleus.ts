@@ -25,7 +25,7 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0x1Caba1EaA6F14b94EF732624Db1702eA41b718ff";
+let NUCLEUS_ADDRESS = "0x49FD8f704a54FB6226e2F14B4761bf6Be84ADF15";
 
 async function main() {
   console.log(`Using ${hydrogendeployer.address} as deployer and owner`);
@@ -47,11 +47,11 @@ async function configureNucleus() {
   console.log("Configuring Nucleus");
   let txdata0 = nucleus.interface.encodeFunctionData("setWrappedGasToken", ["0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889"])
   let txdata1 = nucleus.interface.encodeFunctionData("setContractURI", ["https://stats-cdn.hydrogendefi.xyz/contractURI.json"]);
-  let txdata2 = nucleus.interface.encodeFunctionData("setBaseURI", ["https://stats.hydrogendefi.xyz/pools/metadata/?chainID=80001&v=1.0.0&poolID="]);
+  let txdata2 = nucleus.interface.encodeFunctionData("setBaseURI", ["https://stats.hydrogendefi.xyz/pools/metadata/?chainID=80001&v=1.0.1&poolID="]);
 
   let treasuryLocation = HydrogenNucleusHelper.internalAddressToLocation(accounts.hydrogendeployer.address);
   let swapFees = [{
-    // default fee: 0.2%
+    // default fee: 20 BPS
     tokenA: AddressZero,
     tokenB: AddressZero,
     feePPM: 2000,
@@ -66,7 +66,7 @@ async function configureNucleus() {
     for(let j = 0; j < usdpegs.length; ++j) {
       if(i == j) continue;
       swapFees.push({
-        // stable-stable fee: 0.01%
+        // stable-stable fee: 0.1 BPS
         tokenA: usdpegs[i],
         tokenB: usdpegs[j],
         feePPM: 100,

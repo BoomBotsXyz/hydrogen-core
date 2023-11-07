@@ -25,7 +25,19 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0x1Caba1EaA6F14b94EF732624Db1702eA41b718ff";
+let NUCLEUS_ADDRESS = "0x49FD8f704a54FB6226e2F14B4761bf6Be84ADF15";
+/*
+const currentAddresses = {
+  "80001": "0xd2174BfC96C96608C2EC7Bd8b5919f9e3603d37f",
+  "84531": "0xfE4d3341B87e106fD718f71B71c5430082f01836",
+}
+const currentAddresses = {
+  "8453":  "0x1Caba1EaA6F14b94EF732624Db1702eA41b718ff",
+  "84531": "0x49FD8f704a54FB6226e2F14B4761bf6Be84ADF15",
+  "80001": "0x1Caba1EaA6F14b94EF732624Db1702eA41b718ff",
+}
+https://stats.hydrogendefi.xyz/deprecation_notice/?chainID=80001
+*/
 
 async function main() {
   console.log(`Using ${hydrogendeployer.address} as deployer and owner`);
@@ -35,46 +47,22 @@ async function main() {
   function isChain(chainid: number, chainName: string) {
     return ((chainID === chainid) || ((chainID === 31337) && (process.env.FORK_NETWORK === chainName)));
   }
-  if(!isChain(8453, "base")) throw("Only run this on Base Mainnet or a local fork of Base");
+  if(!isChain(84531, "basegoerli")) throw("Only run this on Base Goerli or a local fork of Base Goerli");
 
   await expectDeployed(NUCLEUS_ADDRESS);
   nucleus = await ethers.getContractAt("HydrogenNucleus", NUCLEUS_ADDRESS) as HydrogenNucleus;
-
   await configureNucleus();
-  await setFees();
   await logAddresses();
 }
 
 async function configureNucleus() {
   console.log("Configuring Nucleus");
-  let txdata0 = nucleus.interface.encodeFunctionData("setWrappedGasToken", ["0x4200000000000000000000000000000000000006"])
   let txdata1 = nucleus.interface.encodeFunctionData("setContractURI", ["https://stats-cdn.hydrogendefi.xyz/contractURI.json"]);
-  let txdata2 = nucleus.interface.encodeFunctionData("setBaseURI", ["https://stats.hydrogendefi.xyz/pools/metadata/?chainID=8453&v=1.0.0&poolID="]);
-  let tx = await nucleus.connect(hydrogendeployer).multicall([txdata0, txdata1, txdata2], {...networkSettings.overrides, gasLimit: 1_000_000});
+  let txdata2 = nucleus.interface.encodeFunctionData("setBaseURI", ["https://stats.hydrogendefi.xyz/pools/metadata/?chainID=84531&v=1.0.1&poolID="]);
+  //let tx = await nucleus.connect(hydrogendeployer).multicall([txdata0], {...networkSettings.overrides, gasLimit: 10000000});
   console.log("tx:", tx);
   await tx.wait(networkSettings.confirmations);
   console.log("Configured Nucleus");
-}
-
-async function setFees() {
-  console.log("Setting fees")
-  let treasuryLocation = HydrogenNucleusHelper.internalAddressToLocation(accounts.hydrogendeployer.address);
-  let swapFees = [{
-    // default fee: 0.2%
-    tokenA: AddressZero,
-    tokenB: AddressZero,
-    feePPM: 2000,
-    receiverLocation: treasuryLocation
-  }];
-  let txdata3 = nucleus.interface.encodeFunctionData("setSwapFeesForPairs", [swapFees]);
-  let txdata4 = nucleus.interface.encodeFunctionData("setFlashLoanFeesForTokens", [[{
-    // default fee: 0.09%
-    token: AddressZero,
-    feePPM: 900,
-    receiverLocation: treasuryLocation
-  }]]);
-  let tx = await nucleus.connect(hydrogendeployer).multicall([txdata3, txdata4], {...networkSettings.overrides, gasLimit: 1_000_000});
-  console.log("Set fees")
 }
 
 async function logAddresses() {

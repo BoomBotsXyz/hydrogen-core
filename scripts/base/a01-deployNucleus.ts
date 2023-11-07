@@ -19,13 +19,14 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-const NUCLEUS_ADDRESS = "0x1Caba1EaA6F14b94EF732624Db1702eA41b718ff";
+const NUCLEUS_ADDRESS = "0x49FD8f704a54FB6226e2F14B4761bf6Be84ADF15";
 
 async function main() {
   console.log(`Using ${hydrogendeployer.address} as deployer and owner`);
 
   chainID = (await provider.getNetwork()).chainId;
-  networkSettings = getNetworkSettings(chainID);
+  console.log("network settings")
+  console.log(networkSettings)
   function isChain(chainid: number, chainName: string) {
     return ((chainID === chainid) || ((chainID === 31337) && (process.env.FORK_NETWORK === chainName)));
   }
@@ -41,7 +42,7 @@ async function deployNucleus() {
   } else {
     console.log("Deploying HydrogenNucleus");
     let args = [accounts.hydrogendeployer.address];
-    nucleus = await deployContractUsingContractFactory(hydrogendeployer, "HydrogenNucleus", args, toBytes32(0), undefined, {...networkSettings.overrides, gasLimit: 10_000_000}, networkSettings.confirmations) as HydrogenNucleus;
+    nucleus = await deployContractUsingContractFactory(hydrogendeployer, "HydrogenNucleus", args, toBytes32(0), undefined, {...networkSettings.overrides, gasLimit: 6_000_000}, networkSettings.confirmations) as HydrogenNucleus;
     console.log(`Deployed HydrogenNucleus to ${nucleus.address}`);
     if(chainID != 31337) await verifyContract(nucleus.address, args);
     if(!!NUCLEUS_ADDRESS && nucleus.address != NUCLEUS_ADDRESS) throw new Error(`Deployed nucleus to ${nucleus.address}, expected ${NUCLEUS_ADDRESS}`)
