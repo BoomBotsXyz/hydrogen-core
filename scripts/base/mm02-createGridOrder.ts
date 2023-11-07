@@ -25,7 +25,7 @@ let networkSettings: any;
 let chainID: number;
 
 let nucleus: HydrogenNucleus;
-let NUCLEUS_ADDRESS = "0x1Caba1EaA6F14b94EF732624Db1702eA41b718ff";
+let NUCLEUS_ADDRESS = "0x49FD8f704a54FB6226e2F14B4761bf6Be84ADF15";
 
 let tokenMetadatas = getTokensBySymbol(8453);
 
@@ -60,17 +60,13 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
   // check balance
   let balance = await token.balanceOf(user.address);
   if(balance.lt(amount)) {
-    console.log("minting token");
-    let tx = await token.connect(user).mint(user.address, amount, networkSettings.overrides);
-    console.log("tx:", tx);
-    await tx.wait(networkSettings.confirmations);
-    console.log("minted token");
+    throw new Error(`insufficient balance. requested ${amount.toString()} have ${balance.toString()}`)
   }
   // check allowance
   let allowance = await token.allowance(user.address, nucleus.address);
   if(allowance.lt(amount)) {
     console.log("approving token");
-    let tx = await token.connect(user).approve(nucleus.address, MaxUint256, networkSettings.overrides);
+    let tx = await token.connect(user).approve(nucleus.address, MaxUint256, {...networkSettings.overrides, gasLimit: 80_000});
     console.log("tx:", tx);
     await tx.wait(networkSettings.confirmations);
     console.log("approved token");
@@ -80,49 +76,58 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
 async function createGridOrder(params:any) {
   console.log("Creating grid order pool");
   let tx = await nucleus.connect(trader1).createGridOrderPool(params, networkSettings.overrides);
+  await watchTxForCreatedPoolID(tx);
+}
+
+async function createGridOrderCompact(params:any) {
+  console.log("Creating grid order pool");
+  let tx = await nucleus.connect(trader1).createGridOrderPoolCompact(params, {...networkSettings.overrides, value: params.gasValue||0, gasLimit: 1_000_000});
+  await watchTxForCreatedPoolID(tx);
+}
+
+async function watchTxForCreatedPoolID(tx:any) {
   console.log("tx:", tx);
   let receipt = await tx.wait(networkSettings.confirmations);
   if(!receipt || !receipt.events || receipt.events.length == 0) {
     console.log(receipt)
     throw new Error("events not found");
   }
-  let poolID = (receipt.events as any)[0].args.poolID;
+  let createEvent = (receipt.events as any).filter(event => event.event == 'PoolCreated')[0];
+  let poolID = createEvent.args.poolID;
   console.log(`Created grid order pool ${poolID}`);
 }
 
 async function createGridOrder3002() {
   // stable pool 3002
-  let symbols = ["DAI", "USDbC", "axlUSDC"]
-  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1.address);
-  for(const symbol of symbols) {
+  const symbols = ["USDC", "USDbC", "axlUSDC", "DAI"]
+  const depositAmounts = [0, WeiPerUsdc.mul(50), 0, WeiPerEther.mul(50)]
+  // token sources
+  const tokenSources = []
+  for(let i = 0; i < symbols.length; i++) {
+    const symbol = symbols[i]
+    const depositAmount = depositAmounts[i]
     if(!tokenMetadatas[symbol].contract) tokenMetadatas[symbol].contract = await ethers.getContractAt("MockERC20", tokenMetadatas[symbol].address, trader1) as MockERC20;
-  }
-  console.log(`Creating grid order pool with ${symbols.join(", ")}`)
-  let tokenSources = symbols.map((symbol,tokenIndex) => {
-    return {
+    tokenSources.push({
       token: tokenMetadatas[symbol].address,
-      amount: 0,//depositAmounts[tokenIndex],
-      location: trader1ExternalLocation
-    }
-  })
-  let tradeRequests = []
+      amount: depositAmount,
+    })
+    await checkTokenBalancesAndAllowance(tokenMetadatas[symbol].contract, trader1, depositAmount);
+  }
+  // exchange rates
+  const exchangeRates = []
   for(const symbolA of symbols) {
     for(const symbolB of symbols) {
       if(symbolA == symbolB) continue;
-      tradeRequests.push({
-        tokenA: tokenMetadatas[symbolA].address,
-        tokenB: tokenMetadatas[symbolB].address,
-        exchangeRate: HydrogenNucleusHelper.encodeExchangeRate(decimalsToAmount(tokenMetadatas[symbolA].decimals), decimalsToAmount(tokenMetadatas[symbolB].decimals).mul(10006).div(10000)),
-        locationB: HydrogenNucleusHelper.LOCATION_FLAG_POOL
-      })
+      const exchangeRate = HydrogenNucleusHelper.encodeExchangeRate(decimalsToAmount(tokenMetadatas[symbolA].decimals), decimalsToAmount(tokenMetadatas[symbolB].decimals).mul(100005).div(100000))
+      exchangeRates.push(exchangeRate);
     }
   }
+  // assemble
   let params = {
     tokenSources,
-    tradeRequests,
-    hptReceiver: trader1.address
+    exchangeRates,
   };
-  await createGridOrder(params);
+  await createGridOrderCompact(params);
 }
 
 async function updateGridOrder3002() {
