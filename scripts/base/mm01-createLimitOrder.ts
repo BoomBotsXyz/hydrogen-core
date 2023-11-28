@@ -90,7 +90,7 @@ async function watchTxForCreatedPoolID(tx:any) {
     console.log(receipt)
     throw new Error("events not found");
   }
-  let createEvent = (receipt.events as any).filter(event => event.event == 'PoolCreated')[0];
+  let createEvent = (receipt.events as any).filter((event:any) => event.event == 'PoolCreated')[0];
   let poolID = createEvent.args.poolID;
   console.log(`Created limit order pool ${poolID}`);
 }

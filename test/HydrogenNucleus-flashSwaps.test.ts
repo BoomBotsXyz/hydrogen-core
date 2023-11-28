@@ -171,7 +171,7 @@ describe("HydrogenNucleus-flashSwaps", function () {
       // 1. encode the token1 -> pool 2001 -> token2 market order
       const call12 = {
         target: nucleus.address,
-        callData: nucleus.interface.encodeFunctionData('executeFlashSwap', [{
+        callData: nucleus.interface.encodeFunctionData('executeMarketOrder', [{
           poolID: 2001,
           tokenA: token2.address,
           tokenB: token1.address,
@@ -179,8 +179,6 @@ describe("HydrogenNucleus-flashSwaps", function () {
           amountB: amountB2001,
           locationA: user3InternalLocation,
           locationB: callbackInternalLocation,
-          flashSwapCallee: AddressZero,
-          callbackData: "0x",
         }])
       }
       const calls12 = [call12, ]

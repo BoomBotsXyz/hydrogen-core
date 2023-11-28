@@ -74,7 +74,7 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
   let allowance = await token.allowance(user.address, nucleus.address);
   if(allowance.lt(amount)) {
     console.log("approving token");
-    let tx = await token.connect(user).approve(nucleus.address, MaxUint256, networkSettings.overrides);
+    let tx = await token.connect(user).approve(nucleus.address, MaxUint256, {...networkSettings.overrides, gasLimit: 80_000});
     console.log("tx:", tx);
     await tx.wait(networkSettings.confirmations);
     console.log("approved token");
@@ -90,9 +90,9 @@ async function executeMarketOrder(params:any) {
     let params2 = {...params, locationB: trader2InternalLocation}
     let txdata1 = nucleus.interface.encodeFunctionData("executeMarketOrder", [params2])
     let txdatas = [txdata0, txdata1]
-    tx = await nucleus.connect(trader2).multicall(txdatas, {...networkSettings.overrides, gasLimit:1000000, value: gasValue});
+    tx = await nucleus.connect(trader2).multicall(txdatas, {...networkSettings.overrides, gasLimit: 400_000, value: gasValue});
   } else {
-    tx = await nucleus.connect(trader2).executeMarketOrder(params, {...networkSettings.overrides, gasLimit:1000000});
+    tx = await nucleus.connect(trader2).executeMarketOrder(params, {...networkSettings.overrides, gasLimit: 200_000});
   }
   console.log("tx:", tx);
   await tx.wait(networkSettings.confirmations);
@@ -101,7 +101,7 @@ async function executeMarketOrder(params:any) {
 
 async function executeMarketOrderDstExt(params:any) {
   console.log("Executing market order");
-  let tx = await nucleus.connect(trader2).executeMarketOrderDstExt(params, {...networkSettings.overrides, gasLimit:1000000, value: params.gasValue || 0});
+  let tx = await nucleus.connect(trader2).executeMarketOrderDstExt(params, {...networkSettings.overrides, gasLimit: 200_000, value: params.gasValue || 0});
   console.log("tx:", tx);
   await tx.wait(networkSettings.confirmations);
   console.log("Executed market order");
@@ -109,7 +109,7 @@ async function executeMarketOrderDstExt(params:any) {
 
 async function executeMarketOrderDstInt(params:any) {
   console.log("Executing market order");
-  let tx = await nucleus.connect(trader2).executeMarketOrderDstInt(params, {...networkSettings.overrides, gasLimit:1000000, value: params.gasValue || 0});
+  let tx = await nucleus.connect(trader2).executeMarketOrderDstInt(params, {...networkSettings.overrides, gasLimit: 200_000, value: params.gasValue || 0});
   console.log("tx:", tx);
   await tx.wait(networkSettings.confirmations);
   console.log("Executed market order");
@@ -124,9 +124,9 @@ async function executeFlashSwap(params:any) {
     let params2 = {...params, locationB: trader2InternalLocation}
     let txdata1 = nucleus.interface.encodeFunctionData("executeFlashSwap", [params2])
     let txdatas = [txdata0, txdata1]
-    tx = await nucleus.connect(trader2).multicall(txdatas, {...networkSettings.overrides, gasLimit:1000000, value: gasValue});
+    tx = await nucleus.connect(trader2).multicall(txdatas, {...networkSettings.overrides, gasLimit: 400_000, value: gasValue});
   } else {
-    tx = await nucleus.connect(trader2).executeFlashSwap(params, {...networkSettings.overrides, gasLimit:1000000});
+    tx = await nucleus.connect(trader2).executeFlashSwap(params, {...networkSettings.overrides, gasLimit: 200_000});
   }
   console.log("tx:", tx);
   await tx.wait(networkSettings.confirmations);

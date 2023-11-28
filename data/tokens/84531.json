@@ -104,7 +104,7 @@
     "symbol": "rETH",
     "decimals": 18,
     "chainID": 84531,
-    "address": "0x9D668d07B45a700aEA6CaE697ac675e3C1a43091",
+    "address": "0x6C6a7A7A151C39Be8f159d5645247F597421Ab16",
     "coingeckoID": "rocket-pool-eth",
     "artifact": "MockERC20",
     "mintAmount": "1000000000000000000000"
