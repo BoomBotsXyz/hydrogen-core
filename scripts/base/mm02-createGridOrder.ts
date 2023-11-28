@@ -7,6 +7,7 @@ dotenv_config();
 
 const accounts = JSON.parse(process.env.ACCOUNTS || "{}");
 const trader1 = new ethers.Wallet(accounts.trader1.key, provider);
+const bill = new ethers.Wallet(accounts.bill.key, provider);
 
 import { HydrogenNucleus, MockERC20 } from "./../../typechain-types";
 import { expectDeployed, isDeployed } from "./../utilities/expectDeployed";
@@ -16,6 +17,7 @@ import { deployContract, verifyContract } from "./../utils/deployContract";
 import HydrogenNucleusHelper from "../utils/HydrogenNucleusHelper";
 import { getTokensBySymbol } from "../utils/getTokens";
 import { decimalsToAmount } from "../utils/price";
+import { leftPad } from "../utils/strings";
 
 const { AddressZero, WeiPerEther, MaxUint256 } = ethers.constants;
 const WeiPerUsdc = BN.from(1_000_000); // 6 decimals
@@ -31,6 +33,7 @@ let tokenMetadatas = getTokensBySymbol(8453);
 
 async function main() {
   console.log(`Using ${trader1.address} as trader1`);
+  console.log(`Bill's wallet: ${bill.address}`);
 
   chainID = (await provider.getNetwork()).chainId;
   networkSettings = getNetworkSettings(chainID);
@@ -43,7 +46,8 @@ async function main() {
   nucleus = await ethers.getContractAt("HydrogenNucleus", NUCLEUS_ADDRESS, trader1) as HydrogenNucleus;
 
   //await createGridOrder3002();
-  await updateGridOrder3002()
+  //await updateGridOrder3002()
+  await createGridOrder16002();
 }
 
 async function verifyDeployments() {
@@ -92,7 +96,7 @@ async function watchTxForCreatedPoolID(tx:any) {
     console.log(receipt)
     throw new Error("events not found");
   }
-  let createEvent = (receipt.events as any).filter(event => event.event == 'PoolCreated')[0];
+  let createEvent = (receipt.events as any).filter((event:any) => event.event == 'PoolCreated')[0];
   let poolID = createEvent.args.poolID;
   console.log(`Created grid order pool ${poolID}`);
 }
@@ -179,7 +183,7 @@ async function verifyTradeRequests(poolID: number, tradeRequests: any[]) {
       return false
     }
   }
-  let tradeRequestsToSet = []
+  let tradeRequestsToSet:any[] = []
   function checkIsSet(tradeRequest: any) {
     let s = `Checking ${getTokenSymbolOrAddress(tradeRequest.tokenA)}-${getTokenSymbolOrAddress(tradeRequest.tokenB)}. `
     if(!isSetCorrectly(tradeRequest)) {
@@ -205,6 +209,65 @@ async function verifyTradeRequests(poolID: number, tradeRequests: any[]) {
     await tx.wait(networkSettings.confirmations)
     console.log("Set trade requests")
   }
+}
+
+async function createGridOrder16002() {
+  let amountETH = WeiPerEther.mul(5).div(100); // 0.05 ETH
+  let exchangeRate6 = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther, WeiPerUsdc.mul(2100)); // 1 WETH -> 2100 USDC
+  let exchangeRate18 = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther, WeiPerEther.mul(2100)); // 1 WETH -> 2100 DAI
+  let externalLocation = HydrogenNucleusHelper.externalAddressToLocation(bill.address);
+  let internalLocation = HydrogenNucleusHelper.internalAddressToLocation(bill.address);
+  let createParams = {
+    tokenSources: [{
+      token: tokenMetadatas["WETH"].address,
+      amount: amountETH,
+      location: internalLocation
+    }],
+    tradeRequests: [{
+      tokenA: tokenMetadatas["WETH"].address,
+      tokenB: tokenMetadatas["USDC"].address,
+      exchangeRate: exchangeRate6,
+      locationB: externalLocation,
+    },{
+      tokenA: tokenMetadatas["WETH"].address,
+      tokenB: tokenMetadatas["USDbC"].address,
+      exchangeRate: exchangeRate6,
+      locationB: externalLocation,
+    },{
+      tokenA: tokenMetadatas["WETH"].address,
+      tokenB: tokenMetadatas["axlUSDC"].address,
+      exchangeRate: exchangeRate6,
+      locationB: externalLocation,
+    },{
+      tokenA: tokenMetadatas["WETH"].address,
+      tokenB: tokenMetadatas["DAI"].address,
+      exchangeRate: exchangeRate18,
+      locationB: externalLocation,
+    },{
+      tokenA: tokenMetadatas["WETH"].address,
+      tokenB: tokenMetadatas["crvUSD"].address,
+      exchangeRate: exchangeRate18,
+      locationB: externalLocation,
+    },{
+      tokenA: tokenMetadatas["WETH"].address,
+      tokenB: tokenMetadatas["MIM"].address,
+      exchangeRate: exchangeRate18,
+      locationB: externalLocation,
+    },{
+      tokenA: tokenMetadatas["WETH"].address,
+      tokenB: tokenMetadatas["DOLA"].address,
+      exchangeRate: exchangeRate18,
+      locationB: externalLocation,
+    }],
+    hptReceiver: bill.address
+  }
+  console.log("createParams")
+  console.log(createParams)
+  let txdata0 = nucleus.interface.encodeFunctionData("wrapGasToken", [internalLocation]);
+  let txdata1 = nucleus.interface.encodeFunctionData("createGridOrderPool", [createParams]);
+  let txdatas = [txdata0, txdata1];
+  let tx = await nucleus.connect(bill).multicall(txdatas, {...networkSettings.overrides, gasLimit: 1_000_000, value: amountETH});
+  await watchTxForCreatedPoolID(tx);
 }
 
 main()

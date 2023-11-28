@@ -71,7 +71,7 @@ async function checkTokenBalancesAndAllowance(token:Contract, user:Wallet, amoun
   let allowance = await token.allowance(user.address, nucleus.address);
   if(allowance.lt(amount)) {
     console.log("approving token");
-    let tx = await token.connect(user).approve(nucleus.address, MaxUint256, networkSettings.overrides);
+    let tx = await token.connect(user).approve(nucleus.address, MaxUint256, {...networkSettings.overrides, gasLimit: 80_000});
     console.log("tx:", tx);
     await tx.wait(networkSettings.confirmations);
     console.log("approved token");
@@ -97,7 +97,7 @@ async function watchTxForCreatedPoolID(tx:any) {
     console.log(receipt)
     throw new Error("events not found");
   }
-  let createEvent = (receipt.events as any).filter(event => event.event == 'PoolCreated')[0];
+  let createEvent = (receipt.events as any).filter((event:any) => event.event == 'PoolCreated')[0];
   let poolID = createEvent.args.poolID;
   console.log(`Created limit order pool ${poolID}`);
 }

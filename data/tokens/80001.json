@@ -73,7 +73,7 @@
     "symbol": "mWMATIC",
     "decimals": 18,
     "chainID": 80001,
-    "address": "0x9D668d07B45a700aEA6CaE697ac675e3C1a43091",
+    "address": "0xf7712f664A1F5d5eB4dAbdd70d6F777a152DF5aB",
     "coingeckoID": "matic-network",
     "artifact": "MockERC20",
     "mintAmount": "10000000000000000000000000"

@@ -50,7 +50,9 @@ async function main() {
   //await createGridOrder4();
   //await createGridOrder5();
   //await createGridOrder6();
-  await createGridOrder7();
+  //await createGridOrder7();
+  //await createGridOrder8();
+  await createGridOrder9();
 }
 
 async function verifyDeployments() {
@@ -104,7 +106,7 @@ async function watchTxForCreatedPoolID(tx:any) {
     console.log(receipt)
     throw new Error("events not found");
   }
-  let createEvent = (receipt.events as any).filter(event => event.event == 'PoolCreated')[0];
+  let createEvent = (receipt.events as any).filter((event:any) => event.event == 'PoolCreated')[0];
   let poolID = createEvent.args.poolID;
   console.log(`Created grid order pool ${poolID}`);
 }
@@ -500,6 +502,88 @@ async function createGridOrder7() {
     exchangeRates,
   };
   await createGridOrderCompact(params);
+}
+
+async function createGridOrder8() {
+  // dai-usdc
+  // with a messed up encoding - sell high buy low
+  let dai = await ethers.getContractAt("MockERC20", tokenMetadatas["DAI"].address, trader1) as MockERC20;
+  let usdc = await ethers.getContractAt("MockERC20", tokenMetadatas["USDC"].address, trader1) as MockERC20;
+  let exchangeRateSellDaiBuyUsdc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther.mul(10_000), WeiPerUsdc.mul(9_980));
+  let exchangeRateSellUsdcBuyDai = HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(10_000), WeiPerEther.mul(9_980));
+  let amountDaiDeposit = WeiPerEther.mul(10_000);
+  let amountUsdcDeposit = WeiPerUsdc.mul(10_000);
+  await checkTokenBalancesAndAllowance(dai, trader1, amountDaiDeposit);
+  await checkTokenBalancesAndAllowance(usdc, trader1, amountUsdcDeposit);
+  // create pool
+  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1.address);
+  let params = {
+    tokenSources: [{
+      token: dai.address,
+      amount: amountDaiDeposit,
+    },{
+      token: usdc.address,
+      amount: amountUsdcDeposit,
+    }],
+    exchangeRates: [
+      exchangeRateSellDaiBuyUsdc,
+      exchangeRateSellUsdcBuyDai
+    ]
+  };
+  await createGridOrderCompact(params);
+}
+
+async function createGridOrder9() {
+  // actually a limit order in disguise
+  // wants to sell eth at $3000/eth
+  // and is willing to accept any stable that a market taker is willing to give
+  let weth = await ethers.getContractAt("MockERC20", tokenMetadatas["WETH"].address, trader1) as MockERC20;
+  let dai = await ethers.getContractAt("MockERC20", tokenMetadatas["DAI"].address, trader1) as MockERC20;
+  let usdc = await ethers.getContractAt("MockERC20", tokenMetadatas["USDC"].address, trader1) as MockERC20;
+  let usdt = await ethers.getContractAt("MockERC20", tokenMetadatas["USDT"].address, trader1) as MockERC20;
+  //let exchangeRateSellUsdcBuyWbtc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(25_000), WeiPerWbtc);
+  //let exchangeRateSellWbtcBuyUsdc = HydrogenNucleusHelper.encodeExchangeRate(WeiPerWbtc, WeiPerUsdc.mul(26_000));
+  //let amountUsdcDeposit = WeiPerUsdc.mul(10_000);
+  //let amountWbtcDeposit = WeiPerWbtc;
+  //await checkTokenBalancesAndAllowance(usdc, trader1, amountUsdcDeposit);
+  //await checkTokenBalancesAndAllowance(wbtc, trader1, amountWbtcDeposit);
+  // create pool
+  let trader1ExternalLocation = HydrogenNucleusHelper.externalAddressToLocation(trader1.address);
+  let params = {
+    tokenSources: [{
+      token: weth.address,
+      amount: WeiPerEther.div(10),
+    },{
+      token: dai.address,
+      amount: WeiPerEther.mul(1000),
+    },{
+      token: usdc.address,
+      amount: WeiPerUsdc.mul(1000),
+    },{
+      token: usdt.address,
+      amount: WeiPerUsdc.mul(1000),
+    }],
+    gasValue: WeiPerEther.div(10),
+    exchangeRates: [
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther, WeiPerEther.mul(2100)), // weth->dai
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther, WeiPerUsdc.mul(2100)), // weth->usdc
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther, WeiPerUsdc.mul(2100)), // weth->usdt
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther.mul(2000), WeiPerEther), // dai->weth
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther, WeiPerUsdc.mul(100_005).div(100_000)), // dai->usdc
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther, WeiPerUsdc.mul(100_005).div(100_000)), // dai->usdt
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(2000), WeiPerEther), // usdc->weth
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc, WeiPerEther.mul(100_005).div(100_000)), // usdc->dai
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc, WeiPerUsdc.mul(100_005).div(100_000)), // usdc->usdt
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc.mul(2000), WeiPerEther), // usdt->weth
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc, WeiPerEther.mul(100_005).div(100_000)), // usdt->dai
+      HydrogenNucleusHelper.encodeExchangeRate(WeiPerUsdc, WeiPerUsdc.mul(100_005).div(100_000)), // usdt->usdc
+    ],
+  };
+  await createGridOrderCompact(params);
+}
+
+async function createGridOrder10() {
+
 }
 
 main()
