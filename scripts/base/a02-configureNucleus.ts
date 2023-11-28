@@ -115,7 +115,7 @@ async function setFees() {
       return false
     }
   }
-  let swapFeesToSet = []
+  let swapFeesToSet:any[] = []
   function checkIsSet(tokenA: string, tokenB: string, feePPM: string, receiverLocation: string) {
     let s = `Checking ${getTokenSymbolOrAddress(tokenA)}-${getTokenSymbolOrAddress(tokenB)}. `
     if(!isSetCorrectly(tokenA, tokenB, feePPM, receiverLocation)) {
@@ -134,10 +134,12 @@ async function setFees() {
     "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA", // USDbC
     "0xEB466342C4d449BC9f53A865D5Cb90586f405215", // axlUSDC
     "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", // DAI
-    "0x5C7e299CF531eb66f2A1dF637d37AbB78e6200C7", // axlDAI
-    "0x406Cde76a3fD20e48bc1E0F60651e60Ae204B040", // axlFRAX
+    //"0x5C7e299CF531eb66f2A1dF637d37AbB78e6200C7", // axlDAI
+    //"0x406Cde76a3fD20e48bc1E0F60651e60Ae204B040", // axlFRAX
     "0xbf1aeA8670D2528E08334083616dD9C5F3B087aE", // MAI
     "0x4A3A6Dd60A34bB2Aba60D73B4C88315E9CeB6A3D", // MIM
+    "0x417Ac0e078398C154EdFadD9Ef675d30Be60Af93", // crvUSD
+    "0x4621b7A9c75199271F773Ebd9A499dbd165c3191", // DOLA
     "0xA61BeB4A3d02decb01039e378237032B351125B4", // agEUR
   ]
   for(let i = 0; i < usdpegs.length; ++i) {
@@ -157,8 +159,9 @@ async function setFees() {
   }
   let ethpegs = [
     "0x4200000000000000000000000000000000000006", // WETH
-    "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22", // cbETH
+    "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452", // wstETH
     "0xB6fe221Fe9EeF5aBa221c348bA20A1Bf5e73624c", // rETH
+    "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22", // cbETH
   ]
   for(let i = 0; i < ethpegs.length; ++i) {
     for(let j = 0; j < ethpegs.length; ++j) {
@@ -178,7 +181,7 @@ async function setFees() {
   console.log("num swap fees to set:", swapFeesToSet.length)
   if(swapFeesToSet.length > 0) {
     console.log("Setting swap fees")
-    let tx = await nucleus.connect(hydrogendeployer).setSwapFeesForPairs(swapFeesToSet, {...networkSettings.overrides});
+    let tx = await nucleus.connect(hydrogendeployer).setSwapFeesForPairs(swapFeesToSet, {...networkSettings.overrides, gasLimit: 60_000*swapFeesToSet.length+40_000});
     await tx.wait(networkSettings.confirmations)
     console.log("Set fees")
   }
