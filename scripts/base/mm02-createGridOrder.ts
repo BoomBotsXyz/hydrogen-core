@@ -211,6 +211,9 @@ async function verifyTradeRequests(poolID: number, tradeRequests: any[]) {
   }
 }
 
+// pool 16002 is seven limit orders implemented as a grid order
+// it is funded with ETH to be sold for USD
+// it is willing to accept any of seven stablecoins, not just one
 async function createGridOrder16002() {
   let amountETH = WeiPerEther.mul(5).div(100); // 0.05 ETH
   let exchangeRate6 = HydrogenNucleusHelper.encodeExchangeRate(WeiPerEther, WeiPerUsdc.mul(2100)); // 1 WETH -> 2100 USDC
